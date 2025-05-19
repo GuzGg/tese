@@ -8,12 +8,14 @@ public abstract class Device {
 	public byte[] deviceId;
 	public long initializedAt;
 	public long lastSeen;
+	public boolean alive;
 	
 	public Device(byte[] deviceId, long initializedAt, long lastSeen) {
 		super();
 		this.deviceId = deviceId;
 		this.initializedAt = initializedAt;
 		this.lastSeen = lastSeen;
+		this.alive = true;
 	}
 	
 	public byte[] getDeviceId() {

@@ -11,4 +11,8 @@ public class Anchor extends Device {
 		super(deviceId, initializedAt, lastSeen);
 		this.listOfTags = new ArrayList<Tag>();
 	}
+	
+	public void addTag(Tag tag) {
+		this.listOfTags.add(tag);
+	}
 }
