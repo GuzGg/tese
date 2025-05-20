@@ -21,18 +21,23 @@ public abstract class Device {
 	public byte[] getDeviceId() {
 		return deviceId;
 	}
+	
 	public void setDeviceId(byte[] deviceId) {
 		this.deviceId = deviceId;
 	}
+	
 	public long getinitializedAt() {
 		return initializedAt;
 	}
+	
 	public void setinitializedAt(long initializedAt) {
 		this.initializedAt = initializedAt;
 	}
+	
 	public long getLastSeen() {
 		return lastSeen;
 	}
+	
 	public void setLastSeen(long lastSeen) {
 		this.lastSeen = lastSeen;
 	}

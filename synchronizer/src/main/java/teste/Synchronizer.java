@@ -1,44 +1,58 @@
 package teste;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
 public class Synchronizer {
 	
-	public List<Tag> listOfTags;
-	public List<Anchor> listOfAnchors;
+	public Map<byte[], Tag> listOfTags;
+	public  Map<byte[], Anchor> listOfAnchors;
+	// tagId -> {anchorId -> distance}
+	public Map<byte[], Map<byte[], Double>>  distances;
 	
-	public Synchronizer(List<Tag> listOfTags, List<Anchor> listOfAnchors) {
+	public Synchronizer(Map<byte[], Tag> listOfTags, Map<byte[], Anchor> listOfAnchors) {
 		super();
 		this.listOfTags = listOfTags;
 		this.listOfAnchors = listOfAnchors;
 	}
 	
 	public Synchronizer() {
-		this.listOfTags = new ArrayList<Tag>();
-		this.listOfAnchors = new ArrayList<Anchor>();
+		this.listOfTags = new HashMap<byte[], Tag>();
+		this.listOfAnchors = new HashMap<byte[], Anchor>();
 	}
 	
+	/**
+	 * Add new anchor to listOfAnchors
+	 * @param anchor anchor to be added to the map
+	 */
 	public void addNewAnchor(Anchor anchor) {
-		this.listOfAnchors.add(anchor);
+		this.listOfAnchors.put(anchor.getDeviceId(), anchor);
 	}
 	
+	/**
+	 * Check if anchor exists
+	 * @param anchor anchor to be checked
+	 * @return if an anchor exists or not
+	 */
 	public boolean anchorExists(Anchor anchor) {
-		return this.listOfAnchors.indexOf(anchor) > 0;
+		return this.listOfAnchors.containsKey(anchor.getDeviceId());
 	}
 	
+	/**
+	 * Add new Tag to listOfTags
+	 * @param tag tag to be added
+	 */
 	public void addNewTag(Tag tag) {
-		this.listOfTags.add(tag);
-		this.listOfAnchors.forEach(anchor -> anchor.addTag(tag));
+		this.listOfTags.put(tag.getDeviceId(), tag);
+		this.listOfAnchors.values().forEach(anchor -> anchor.addTag(tag));
 	}
 	
+	/**
+	 * Check if tag exists
+	 * @param tag anchor to be checked
+	 * @return if an tag exists or not
+	 */
 	public boolean tagExists(Tag tag) {
-		return this.listOfTags.indexOf(tag) > 0;
+		return this.listOfTags.containsKey(tag.getDeviceId());
 	}
-	
-	public boolean tagExists2(Tag tag) {
-		boolean exists = this.listOfAnchors.stream().anyMatch((anchor -> anchor.listOfTags.contains(tag)));
-		return exists;
-	}
-	
 }
