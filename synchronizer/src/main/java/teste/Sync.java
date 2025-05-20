@@ -9,6 +9,8 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
+import org.apache.tomcat.util.json.JSONParser;
+
 /**
  * Servlet implementation class Synchronizer
  */
@@ -40,6 +42,16 @@ public class Sync extends HttpServlet {
 	protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
 		// TODO Auto-generated method stub
 		doGet(request, response);
+		response.setContentType("application/json");
+		JSONParser jsonInput = new JSONParser(response.toString());
+		String pathInfo = request.getPathInfo();
+		 if (pathInfo.equals("/measure")) {
+		        // Process distance JSON
+		    } else if (pathInfo.equals("/scan")) {
+		        // Process battery JSON
+		    } else {
+		        // Handle unknown path
+		    }
 	}
 
 }
