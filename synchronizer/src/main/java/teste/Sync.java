@@ -72,8 +72,15 @@ public class Sync extends HttpServlet {
         }
 	}
 
+	/**
+	 * handle a request of type boot
+	 * @param jsonObj json object received by the request
+	 * @param writer servelet writer
+	 * @param response servelet response
+	 * @throws JSONException
+	 * @throws IOException
+	 */
     private void handleBootRequest(JSONObject jsonObj, PrintWriter writer, HttpServletResponse response) throws JSONException, IOException {
-        // Basic validation: check if "anchorId" exists and is a string
         if (!jsonObj.has("anchorId") || !(jsonObj.get("anchorId") instanceof String)) {
             sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing or invalid 'anchorId' in boot request.");
             return;
@@ -88,6 +95,14 @@ public class Sync extends HttpServlet {
         response.setStatus(HttpServletResponse.SC_OK);
     }
 
+	/**
+	 * handle a request of type measure
+	 * @param jsonObj json object received by the request
+	 * @param writer servelet writer
+	 * @param response servelet response
+	 * @throws JSONException
+	 * @throws IOException
+	 */
     private void handleMeasureRequest(JSONObject jsonObj, PrintWriter writer, HttpServletResponse response) throws JSONException, IOException {
         if (!jsonObj.has("anchorId") || !(jsonObj.get("anchorId") instanceof String)) {
             sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing or invalid 'anchorId' in measure request.");
@@ -124,6 +139,14 @@ public class Sync extends HttpServlet {
         response.setStatus(HttpServletResponse.SC_OK);
     }
 
+	/**
+	 * handle a request of type scan
+	 * @param jsonObj json object received by the request
+	 * @param writer servelet writer
+	 * @param response servelet response
+	 * @throws JSONException
+	 * @throws IOException
+	 */
     private void handleScanRequest(JSONObject jsonObj, PrintWriter writer, HttpServletResponse response) throws JSONException, IOException {
         if (!jsonObj.has("anchorID") || !(jsonObj.get("anchorID") instanceof String)) {
             sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing or invalid 'anchorID' in scan request.");
