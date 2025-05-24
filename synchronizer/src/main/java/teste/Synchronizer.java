@@ -5,20 +5,20 @@ import java.util.Map;
 
 public class Synchronizer {
 	
-	public Map<byte[], Tag> listOfTags;
-	public  Map<byte[], Anchor> listOfAnchors;
+	public Map<String, Tag> listOfTags;
+	public  Map<String, Anchor> listOfAnchors;
 	// tagId -> {anchorId -> distance}
-	public Map<byte[], Map<byte[], Double>>  distances;
+	public Map<String, Map<String, Double>>  distances;
 	
-	public Synchronizer(Map<byte[], Tag> listOfTags, Map<byte[], Anchor> listOfAnchors) {
+	public Synchronizer(Map<String, Tag> listOfTags, Map<String, Anchor> listOfAnchors) {
 		super();
 		this.listOfTags = listOfTags;
 		this.listOfAnchors = listOfAnchors;
 	}
 	
 	public Synchronizer() {
-		this.listOfTags = new HashMap<byte[], Tag>();
-		this.listOfAnchors = new HashMap<byte[], Anchor>();
+		this.listOfTags = new HashMap<String, Tag>();
+		this.listOfAnchors = new HashMap<String, Anchor>();
 	}
 	
 	/**

@@ -7,7 +7,7 @@ public class Anchor extends Device {
 
 	public List<Tag> listOfTags;
 	
-	public Anchor(byte[] deviceId, long initializedAt, long lastSeen) {
+	public Anchor(String deviceId, long initializedAt, long lastSeen) {
 		super(deviceId, initializedAt, lastSeen);
 		this.listOfTags = new ArrayList<Tag>();
 	}

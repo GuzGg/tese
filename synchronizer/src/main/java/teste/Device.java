@@ -5,12 +5,12 @@ package teste;
  */
 public abstract class Device {
 	
-	public byte[] deviceId;
+	public String deviceId;
 	public long initializedAt;
 	public long lastSeen;
 	public boolean alive;
 	
-	public Device(byte[] deviceId, long initializedAt, long lastSeen) {
+	public Device(String deviceId, long initializedAt, long lastSeen) {
 		super();
 		this.deviceId = deviceId;
 		this.initializedAt = initializedAt;
@@ -18,11 +18,11 @@ public abstract class Device {
 		this.alive = true;
 	}
 	
-	public byte[] getDeviceId() {
+	public String getDeviceId() {
 		return deviceId;
 	}
 	
-	public void setDeviceId(byte[] deviceId) {
+	public void setDeviceId(String deviceId) {
 		this.deviceId = deviceId;
 	}
 	
