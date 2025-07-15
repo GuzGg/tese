@@ -2,6 +2,9 @@ package communications;
 
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
@@ -11,6 +14,11 @@ import javax.servlet.http.HttpServletResponse;
 import org.json.JSONArray;
 import org.json.JSONException; // Import JSONException
 import org.json.JSONObject;
+
+import devices.Tag;
+import teste.Synchronizer;
+import util.ActionManager;
+import util.ActionManager.Action;
 
 /**
  * Servlet implementation class Synchronizer
@@ -23,6 +31,9 @@ public class Sync extends HttpServlet {
     private static final String PATH_BOOT = "/boot";
     private static final String PATH_MEASURE = "/measure";
     private static final String PATH_SCAN = "/scan";
+    
+    private ActionManager actionManager = new ActionManager();
+    private Synchronizer synchronizer = new Synchronizer();
 
     /**
      * @see HttpServlet#HttpServlet()
@@ -89,9 +100,12 @@ public class Sync extends HttpServlet {
         System.out.println("Boot request for anchorId: " + id); // For logging
 
         // Add Anchor to Synchronizer
-
+        this.synchronizer.addNewTag(new Tag(id, LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()));
+        
+        String responseString = this.getResponse();
+        
         // Send response
-        writer.write("{}");
+        writer.write(responseString);
         response.setStatus(HttpServletResponse.SC_OK);
     }
 
@@ -175,6 +189,20 @@ public class Sync extends HttpServlet {
 
         writer.write("{}");
         response.setStatus(HttpServletResponse.SC_OK);
+    }
+    
+    private String getResponse() {
+    	Action action = this.actionManager.nextAction();
+    	if(this.synchronizer.listOfTags.isEmpty()){
+    		this.actionManager.updateChannelBusyUntilSlowScan();
+    		return "slowScan";
+    	} else if(action == Action.FAST_SCAN) {
+    		this.actionManager.updateChannelBusyUntilFastScan();
+    		return "fastScan";
+    	} else {
+    		this.actionManager.updateChanelBusyMeasurement(this.synchronizer.listOfAnchors.size(), this.synchronizer.listOfTags.size());
+    		return "measure";
+    	}
     }
 
     private void sendErrorResponse(HttpServletResponse response, int statusCode, String message) throws IOException {
