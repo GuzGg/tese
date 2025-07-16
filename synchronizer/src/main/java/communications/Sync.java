@@ -15,6 +15,7 @@ import org.json.JSONArray;
 import org.json.JSONException; // Import JSONException
 import org.json.JSONObject;
 
+import devices.Anchor;
 import devices.Tag;
 import teste.Synchronizer;
 import util.ActionManager;
@@ -100,7 +101,7 @@ public class Sync extends HttpServlet {
         System.out.println("Boot request for anchorId: " + id); // For logging
 
         // Add Anchor to Synchronizer
-        this.synchronizer.addNewTag(new Tag(id, LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()));
+        this.synchronizer.addNewAnchor(new Anchor(id, LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()));
         
         String responseString = this.getResponse();
         
@@ -179,8 +180,10 @@ public class Sync extends HttpServlet {
                 JSONObject obj = (JSONObject) element;
                 if (obj.has("tagID") && obj.get("tagID") instanceof String) {
                     String tagID = obj.getString("tagID");
-                    System.out.println("Scan: tagID=" + tagID);
-                    // Implement handling of scan data
+                    Tag tag = new Tag(tagID, LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
+                    if(!this.synchronizer.tagExists(tag)) {
+                        this.synchronizer.addNewTag(tag);
+                    }
                 } else {
                     System.err.println("Invalid tag object in scan request: " + obj.toString());
                 }

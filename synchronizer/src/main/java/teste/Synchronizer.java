@@ -6,6 +6,10 @@ import java.util.Map;
 import devices.Anchor;
 import devices.Tag;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+
 public class Synchronizer {
 	
 	public Map<String, Tag> listOfTags;
@@ -111,5 +115,59 @@ public class Synchronizer {
 		}
 	}
 	
+	public String getSlowScanResponse(long executionTime) {
+		 JSONObject jsonObject = new JSONObject();
+
+		   try {
+	            jsonObject.put("actionToExecute", "slowScan");
+	            jsonObject.put("whenToExecute", executionTime);
+	        } catch (org.json.JSONException e) {
+	            // Handle any JSONException that might occur
+	            e.printStackTrace();
+	        }
+		return jsonObject.toString();
+	}
 	
+	public String getFastScanResponse(long executionTime) {
+		 JSONObject jsonObject = new JSONObject();
+
+		   try {
+	            jsonObject.put("actionToExecute", "fastScan");
+	            jsonObject.put("whenToExecute", executionTime);
+	        } catch (org.json.JSONException e) {
+	            // Handle any JSONException that might occur
+	            e.printStackTrace();
+	        }
+		return jsonObject.toString();
+	}
+	
+	
+	public String getMeasurmentResponse() {
+		
+		   JSONObject jsonObject = new JSONObject();
+		   long executionTime = 0;
+		   try {
+	            jsonObject.put("actionToExecute", "measure");
+
+	            JSONArray tagsArray = new JSONArray();
+
+	            for (Map.Entry<String, Tag> entry : listOfTags.entrySet()) {
+	                Tag tag = entry.getValue();
+
+	                // Create a JSONObject for each tag
+	                JSONObject tagJson = new JSONObject();
+	                tagJson.put("deviceID", tag.getDeviceId());
+	                tagJson.put("whenToExecute", executionTime);
+
+	                tagsArray.put(tagJson);
+	            }
+
+	            jsonObject.put("tags", tagsArray);
+
+	        } catch (org.json.JSONException e) {
+	            e.printStackTrace();
+	        }
+		return jsonObject.toString();
+		
+	}
 }
