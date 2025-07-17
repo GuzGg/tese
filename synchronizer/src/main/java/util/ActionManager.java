@@ -16,6 +16,7 @@ public class ActionManager {
 	private int scanTime = 300;
 	public LocalDateTime lastScan = LocalDateTime.now();
 	private long channelBusyUntil = LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+	private long actionStartingTime = LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
 	
 	public ActionManager() {
 		
@@ -31,16 +32,21 @@ public class ActionManager {
 		return Action.MEASUREMENT;
 	}
 	
-	public void updateChannelBusyUntilSlowScan(){
+	public long getSlowScanTime(){
 		this.setChannelBusyUntil(this.getChannelBusyUntil() + (this.slowScanPeriod + this.scanTime));
+		return this.slowScanPeriod/this.scanTime;
 	}
-	public void updateChannelBusyUntilFastScan() {
+	public long getFastScanTime() {
 		this.setChannelBusyUntil(this.getChannelBusyUntil() + this.scanTime);
+		return this.scanPeriod/this.scanTime;
 	}
 	
-	public void updateChanelBusyMeasurement(int numberOfAnchor, int numberOfTags) {
-		if((LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() - this.lastScan.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()) > this.scanPeriod)
-		this.setChannelBusyUntil(this.getChannelBusyUntil() + (numberOfAnchor * numberOfTags * this.scanTime));
+	public long getMeasurmentTime(int numberOfAnchor, int numberOfTags) {
+		if((LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() - this.lastScan.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()) > this.scanPeriod) {
+			this.setChannelBusyUntil(this.getChannelBusyUntil() + (numberOfAnchor * numberOfTags * this.scanTime));
+			this.setActionStartingTime(this.getChannelBusyUntil());
+		}
+		return this.getActionStartingTime();
 	}
 
 	public long getChannelBusyUntil() {
@@ -49,5 +55,17 @@ public class ActionManager {
 
 	public void setChannelBusyUntil(long channelBusyUntil) {
 		this.channelBusyUntil = channelBusyUntil;
+	}
+
+	public long getActionStartingTime() {
+		return actionStartingTime;
+	}
+
+	public void setActionStartingTime(long actionStartingTime) {
+		this.actionStartingTime = actionStartingTime;
+	}
+	
+	public long getScanTime() {
+		return this.getScanTime();
 	}
 }

@@ -101,9 +101,10 @@ public class Sync extends HttpServlet {
         System.out.println("Boot request for anchorId: " + id); // For logging
 
         // Add Anchor to Synchronizer
-        this.synchronizer.addNewAnchor(new Anchor(id, LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()));
+        Anchor anchor = new Anchor(id, LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
+        this.synchronizer.addNewAnchor(anchor);
         
-        String responseString = this.getResponse();
+        String responseString = this.getResponse(anchor);
         
         // Send response
         writer.write(responseString);
@@ -194,17 +195,14 @@ public class Sync extends HttpServlet {
         response.setStatus(HttpServletResponse.SC_OK);
     }
     
-    private String getResponse() {
+    private String getResponse(Anchor anchor) {
     	Action action = this.actionManager.nextAction();
     	if(this.synchronizer.listOfTags.isEmpty()){
-    		this.actionManager.updateChannelBusyUntilSlowScan();
-    		return "slowScan";
+    		return this.synchronizer.getSlowScanResponse(this.actionManager.getSlowScanTime());
     	} else if(action == Action.FAST_SCAN) {
-    		this.actionManager.updateChannelBusyUntilFastScan();
-    		return "fastScan";
+    		return this.synchronizer.getFastScanResponse(this.actionManager.getFastScanTime());
     	} else {
-    		this.actionManager.updateChanelBusyMeasurement(this.synchronizer.listOfAnchors.size(), this.synchronizer.listOfTags.size());
-    		return "measure";
+    		return this.synchronizer.getMeasurmentResponse(anchor, this.actionManager.getMeasurmentTime(this.synchronizer.listOfAnchors.size(), this.synchronizer.listOfTags.size()), this.actionManager.getScanTime());
     	}
     }
 

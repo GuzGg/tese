@@ -1,6 +1,8 @@
 package teste;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import devices.Anchor;
@@ -142,22 +144,26 @@ public class Synchronizer {
 	}
 	
 	
-	public String getMeasurmentResponse() {
+	public String getMeasurmentResponse( Anchor anchor, long executionTime, long scanTime) {
 		
 		   JSONObject jsonObject = new JSONObject();
-		   long executionTime = 0;
 		   try {
 	            jsonObject.put("actionToExecute", "measure");
 
 	            JSONArray tagsArray = new JSONArray();
+	            
+	            List<Anchor> anchorList = new ArrayList<>(this.listOfAnchors.values());
+	            List<Tag> tagList = new ArrayList<>(this.listOfTags.values());
+	            
+	            int anchorIndex = anchorList.indexOf(anchor);
 
-	            for (Map.Entry<String, Tag> entry : listOfTags.entrySet()) {
-	                Tag tag = entry.getValue();
-
+	            for (Tag tag :tagList) {
+	                long ellapsedTime = executionTime + tagList.indexOf(tag) * anchorList.size() * scanTime;
+	                long timeToMeasure = ellapsedTime + anchorIndex * scanTime;
 	                // Create a JSONObject for each tag
 	                JSONObject tagJson = new JSONObject();
 	                tagJson.put("deviceID", tag.getDeviceId());
-	                tagJson.put("whenToExecute", executionTime);
+	                tagJson.put("whenToExecute", timeToMeasure);
 
 	                tagsArray.put(tagJson);
 	            }
