@@ -29,7 +29,7 @@ public class Sync extends HttpServlet {
 	private static final long serialVersionUID = 1L;
 
     // Define constants for paths for better maintainability
-    private static final String PATH_BOOT = "/boot";
+    private static final String PATH_BOOT = "/anchorRegistration";
     private static final String PATH_MEASURE = "/measure";
     private static final String PATH_SCAN = "/scan";
     
@@ -49,7 +49,7 @@ public class Sync extends HttpServlet {
 	protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
 		response.setContentType("application/json"); // Set content type once
 		String pathInfo = request.getPathInfo();
-
+		System.err.println(pathInfo);
 		// Check if pathInfo is null
 		if (pathInfo == null || pathInfo.isEmpty()) {
             sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing path information (e.g., /boot, /measure, /scan)");
@@ -57,6 +57,7 @@ public class Sync extends HttpServlet {
         }
 
 		String jsonString = request.getParameter("jsondata");
+		System.err.println(jsonString);
 
         if (jsonString == null || jsonString.isEmpty()) {
             sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing 'jsondata' parameter.");
@@ -124,7 +125,7 @@ public class Sync extends HttpServlet {
             sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing or invalid 'anchorId' in measure request.");
             return;
         }
-        String id = jsonObj.getString("anchorId");
+        String anchorId = jsonObj.getString("anchorId");
 
         if (!jsonObj.has("tags") || !(jsonObj.get("tags") instanceof JSONArray)) {
             sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing or invalid 'tags' array in measure request.");
@@ -150,8 +151,11 @@ public class Sync extends HttpServlet {
                 }
             }
         });
-
-        writer.write("{}");
+        Anchor anchor = this.synchronizer.listOfAnchors.get(anchorId);
+        String responseString = this.getResponse(anchor);
+        
+        // Send response
+        writer.write(responseString);
         response.setStatus(HttpServletResponse.SC_OK);
     }
 
@@ -164,11 +168,11 @@ public class Sync extends HttpServlet {
 	 * @throws IOException
 	 */
     private void handleScanRequest(JSONObject jsonObj, PrintWriter writer, HttpServletResponse response) throws JSONException, IOException {
-        if (!jsonObj.has("anchorID") || !(jsonObj.get("anchorID") instanceof String)) {
+        if (!jsonObj.has("anchorId") || !(jsonObj.get("anchorId") instanceof String)) {
             sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing or invalid 'anchorID' in scan request.");
             return;
         }
-        String anchorId = jsonObj.getString("anchorID");
+        String anchorId = jsonObj.getString("anchorId");
 
         if (!jsonObj.has("tags") || !(jsonObj.get("tags") instanceof JSONArray)) {
             sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing or invalid 'tags' array in scan request.");
@@ -190,8 +194,12 @@ public class Sync extends HttpServlet {
                 }
             }
         });
-
-        writer.write("{}");
+        
+        Anchor anchor = this.synchronizer.listOfAnchors.get(anchorId);
+        String responseString = this.getResponse(anchor);
+        
+        // Send response
+        writer.write(responseString);
         response.setStatus(HttpServletResponse.SC_OK);
     }
     
@@ -209,7 +217,7 @@ public class Sync extends HttpServlet {
     private void sendErrorResponse(HttpServletResponse response, int statusCode, String message) throws IOException {
         response.setStatus(statusCode);
         try (PrintWriter writer = response.getWriter()) {
-        	 writer.write("{}");
+        	 writer.write(message);
         }
     }
 }

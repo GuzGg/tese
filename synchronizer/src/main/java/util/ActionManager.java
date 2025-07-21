@@ -66,6 +66,6 @@ public class ActionManager {
 	}
 	
 	public long getScanTime() {
-		return this.getScanTime();
+		return this.scanTime;
 	}
 }
