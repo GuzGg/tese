@@ -17,9 +17,9 @@ import org.json.JSONObject;
 
 import devices.Anchor;
 import devices.Tag;
-import teste.Synchronizer;
-import util.ActionManager;
-import util.ActionManager.Action;
+import managers.ActionManager;
+import managers.Synchronizer;
+import managers.ActionManager.Action;
 
 /**
  * Servlet implementation class Synchronizer

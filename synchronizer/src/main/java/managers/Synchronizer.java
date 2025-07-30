@@ -1,4 +1,4 @@
-package teste;
+package managers;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -7,6 +7,7 @@ import java.util.Map;
 
 import devices.Anchor;
 import devices.Tag;
+import measurements.Measurement;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -17,22 +18,18 @@ public class Synchronizer {
 	public Map<String, Tag> listOfTags;
 	public  Map<String, Anchor> listOfAnchors;
 	// tagId -> {anchorId -> distance}
-	public Map<String, Map<String, Double>>  distances;
+	public Map<String, Measurement>  distances;
 	
 	public Synchronizer(Map<String, Tag> listOfTags, Map<String, Anchor> listOfAnchors) {
 		super();
 		this.listOfTags = listOfTags;
 		this.listOfAnchors = listOfAnchors;
-		this.distances = new HashMap<String, Map<String, Double>>();
+		this.distances = new HashMap<String, Measurement>();
 		this.listOfTags.forEach(
 			(tagString, tag) -> {
-				this.listOfAnchors.forEach(
-					(anchorString, anchor) -> {
-						HashMap auxMap = new HashMap<String, Double>();
-						auxMap.put(anchorString, Double.MAX_VALUE);
-						this.distances.put(tagString, auxMap);
-					}
-				);
+//				this.listOfAnchors.forEach(
+//					//this.distances.put(tagString, auxMap);
+//				);
 			}
 		);
 	}
@@ -82,41 +79,41 @@ public class Synchronizer {
 	 * in the 'distances' map.
 	 * @param tagId unique ID of the tag whose nearest anchor needs to be updated.
 	 */
-	public void updateNearestAnchor(String tagId) {
-		if (distances == null || !distances.containsKey(tagId)) {
-			System.err.println("No distance data available or tag '" + tagId + "' not found in distances map.");
-			return;
-		}
-
-		Map<String, Double> tagDistances = distances.get(tagId);
-
-		if (tagDistances == null || tagDistances.isEmpty()) {
-			System.err.println("No anchor distances recorded for tag '" + tagId + "'. Cannot update nearest anchor.");
-			return;
-		}
-
-		String nearestAnchorId = null;
-		double minDistance = Double.MAX_VALUE; 
-
-		for (Map.Entry<String, Double> entry : tagDistances.entrySet()) {
-			String currentAnchorId = entry.getKey();
-			Double currentDistance = entry.getValue();
-			if (currentDistance != null && currentDistance < minDistance) {
-				minDistance = currentDistance;
-				nearestAnchorId = currentAnchorId;
-			}
-		}
-		
-		if (nearestAnchorId != null) {
-			Tag tag = listOfTags.get(tagId);
-			if (tag == null) {
-				return;
-			}
-			
-			tag.setNearestAnchor(listOfAnchors.get(nearestAnchorId));
-		}
-	}
-	
+//	public void updateNearestAnchor(String tagId) {
+//		if (distances == null || !distances.containsKey(tagId)) {
+//			System.err.println("No distance data available or tag '" + tagId + "' not found in distances map.");
+//			return;
+//		}
+//
+//		Map<String, Double> tagDistances = distances.get(tagId);
+//
+//		if (tagDistances == null || tagDistances.isEmpty()) {
+//			System.err.println("No anchor distances recorded for tag '" + tagId + "'. Cannot update nearest anchor.");
+//			return;
+//		}
+//
+//		String nearestAnchorId = null;
+//		double minDistance = Double.MAX_VALUE; 
+//
+//		for (Map.Entry<String, Double> entry : tagDistances.entrySet()) {
+//			String currentAnchorId = entry.getKey();
+//			Double currentDistance = entry.getValue();
+//			if (currentDistance != null && currentDistance < minDistance) {
+//				minDistance = currentDistance;
+//				nearestAnchorId = currentAnchorId;
+//			}
+//		}
+//		
+//		if (nearestAnchorId != null) {
+//			Tag tag = listOfTags.get(tagId);
+//			if (tag == null) {
+//				return;
+//			}
+//			
+//			tag.setNearestAnchor(listOfAnchors.get(nearestAnchorId));
+//		}
+//	}
+//	
 	public String getSlowScanResponse(long executionTime) {
 		 JSONObject jsonObject = new JSONObject();
 
