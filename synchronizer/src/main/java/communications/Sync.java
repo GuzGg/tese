@@ -19,6 +19,8 @@ import devices.Anchor;
 import devices.Tag;
 import managers.ActionManager;
 import managers.Synchronizer;
+import measurements.Measurement;
+import measurements.Reading;
 import managers.ActionManager.Action;
 
 /**
@@ -133,6 +135,7 @@ public class Sync extends HttpServlet {
         }
         JSONArray tagArray = jsonObj.getJSONArray("tags");
 
+        Anchor anchor = this.synchronizer.listOfAnchors.get(anchorId);
         tagArray.forEach(element -> {
             if (element instanceof JSONObject) {
                 JSONObject obj = (JSONObject) element;
@@ -144,6 +147,8 @@ public class Sync extends HttpServlet {
                     String tagID = obj.getString("tagID");
                     Number data = obj.getNumber("data");
                     Number executedAt = obj.getNumber("executedAt");
+                    Tag tag = this.synchronizer.listOfTags.get(tagID);
+                    Reading reading = new Reading(anchor, data.longValue(), executedAt.longValue(), 5);
                     System.out.println("Measure: tagID=" + tagID + ", data=" + data + ", executedAt=" + executedAt);
                     // Implement handling of measured data
                 } else {
@@ -151,7 +156,6 @@ public class Sync extends HttpServlet {
                 }
             }
         });
-        Anchor anchor = this.synchronizer.listOfAnchors.get(anchorId);
         String responseString = this.getResponse(anchor);
         
         // Send response

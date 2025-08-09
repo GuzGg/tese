@@ -142,7 +142,6 @@ public class Synchronizer {
 	
 	
 	public String getMeasurmentResponse( Anchor anchor, long executionTime, long scanTime) {
-		
 		   JSONObject jsonObject = new JSONObject();
 		   try {
 	            jsonObject.put("actionToExecute", "measure");

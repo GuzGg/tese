@@ -10,10 +10,10 @@ public class ActionManager {
 		MEASUREMENT
 	}
 	
-	private int slowScanPeriod = 60000;
-	private int scanPeriod = 30000;
-	private int scanInterval = 2000;
-	private int scanTime = 300;
+	private int slowScanPeriod = 60000; //milliseconds
+	private int scanPeriod = 30000; //milliseconds
+	private int scanInterval = 2000; //milliseconds
+	private int scanTime = 300; //milliseconds
 	public LocalDateTime lastScan = LocalDateTime.now();
 	private long channelBusyUntil = LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
 	private long actionStartingTime = LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
@@ -34,17 +34,17 @@ public class ActionManager {
 	
 	public long getSlowScanTime(){
 		this.setChannelBusyUntil(this.getChannelBusyUntil() + (this.slowScanPeriod + this.scanTime));
-		return this.slowScanPeriod/this.scanTime;
+		return LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() + this.slowScanPeriod/this.scanTime;
 	}
 	public long getFastScanTime() {
 		this.setChannelBusyUntil(this.getChannelBusyUntil() + this.scanTime);
-		return this.scanPeriod/this.scanTime;
+		return LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() + this.scanPeriod/this.scanTime;
 	}
 	
 	public long getMeasurmentTime(int numberOfAnchor, int numberOfTags) {
 		if((LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() - this.lastScan.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()) > this.scanPeriod) {
+			this.setActionStartingTime(this.getChannelBusyUntil());		
 			this.setChannelBusyUntil(this.getChannelBusyUntil() + (numberOfAnchor * numberOfTags * this.scanTime));
-			this.setActionStartingTime(this.getChannelBusyUntil());
 		}
 		return this.getActionStartingTime();
 	}

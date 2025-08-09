@@ -4,9 +4,16 @@ import devices.Anchor;
 
 public class Reading {
 	private Anchor anchor;
-	private long disctance;
+	private long distance;
 	private long timestamp;
 	private int channel;
+	
+	public Reading (Anchor anchor, long distance, long timestamp, int channel) {
+		this.anchor = anchor;
+		this.distance = distance;
+		this.timestamp = timestamp;
+		this.channel = channel;
+	}
 	
 	public Anchor getAnchor() {
 		return anchor;
@@ -15,10 +22,10 @@ public class Reading {
 		this.anchor = anchor;
 	}
 	public long getDisctance() {
-		return disctance;
+		return distance;
 	}
 	public void setDisctance(long disctance) {
-		this.disctance = disctance;
+		this.distance = disctance;
 	}
 	public long getTimestamp() {
 		return timestamp;

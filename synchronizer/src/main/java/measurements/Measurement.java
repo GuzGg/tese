@@ -9,6 +9,12 @@ public class Measurement {
 	private long measurmentId;
 	private List<Reading> readings;
 	
+	public long getMeasurmentId() {
+		return measurmentId;
+	}
+	public void setMeasurmentId(long measurmentId) {
+		this.measurmentId = measurmentId;
+	}
 	public Tag getTag() {
 		return tag;
 	}
@@ -21,6 +27,4 @@ public class Measurement {
 	public void setReadings(List<Reading> readings) {
 		this.readings = readings;
 	}
-
-	
 }
