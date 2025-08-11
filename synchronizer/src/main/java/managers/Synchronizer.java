@@ -17,14 +17,14 @@ public class Synchronizer {
 	
 	public Map<String, Tag> listOfTags;
 	public  Map<String, Anchor> listOfAnchors;
-	// tagId -> {anchorId -> distance}
-	public Map<String, Measurement>  distances;
+	// tagId -> {Measurements}
+	public Map<String, List<Measurement>>  distances;
 	
 	public Synchronizer(Map<String, Tag> listOfTags, Map<String, Anchor> listOfAnchors) {
 		super();
 		this.listOfTags = listOfTags;
 		this.listOfAnchors = listOfAnchors;
-		this.distances = new HashMap<String, Measurement>();
+		this.distances = new HashMap<String, List<Measurement>>();
 		this.listOfTags.forEach(
 			(tagString, tag) -> {
 //				this.listOfAnchors.forEach(
