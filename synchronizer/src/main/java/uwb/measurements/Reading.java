@@ -1,6 +1,8 @@
-package measurements;
+package uwb.measurements;
 
-import devices.Anchor;
+import org.json.JSONObject;
+
+import uwb.devices.Anchor;
 
 public class Reading {
 	private Anchor anchor;
@@ -38,5 +40,16 @@ public class Reading {
 	}
 	public void setChannel(int channel) {
 		this.channel = channel;
+	}
+	
+	public JSONObject toJson() {
+		JSONObject json = new JSONObject();
+		
+		json.put("anchorID", this.getAnchor().getDeviceId());
+		json.put("timestamp", this.getTimestamp());
+		json.put("distance", this.getDisctance());
+		json.put("channel", this.getChannel());
+		
+		return json;
 	}
 }

@@ -1,4 +1,4 @@
-package managers;
+package uwb.managers;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
