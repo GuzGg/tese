@@ -1,12 +1,15 @@
 package uwb.communications;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintWriter;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
 
+import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
@@ -17,6 +20,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import uwb.config.Config;
 import uwb.devices.Anchor;
 import uwb.devices.Tag;
 import uwb.managers.ActionManager;
@@ -25,14 +29,10 @@ import uwb.measurements.Measurement;
 import uwb.measurements.Reading;
 import uwb.managers.ActionManager.Action;
 
-/**
- * Servlet implementation class Synchronizer
- */
-@WebServlet("/Synchronizer/*") // Changed to handle sub-paths
+@WebServlet("/Synchronizer/*")
 public class Sync extends HttpServlet {
-	private static final long serialVersionUID = 1L;
+    private static final long serialVersionUID = 1L;
 
-    // Define constants for paths for better maintainability
     private static final String PATH_BOOT = "/anchorRegistration";
     private static final String PATH_MEASURE = "/measurementReport";
     private static final String PATH_SCAN = "/scanReport";
@@ -40,208 +40,233 @@ public class Sync extends HttpServlet {
     private ActionManager actionManager = new ActionManager();
     private Synchronizer synchronizer = new Synchronizer();
     private String outputUrl;
+    private Config config;
 
-    /**
-     * @see HttpServlet#HttpServlet()
-     */
     public Sync() {
         super();
     }
 
-	/**
-	 * @see HttpServlet#doPost(HttpServletRequest request, HttpServletResponse response)
-	 */
-	protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
-		response.setContentType("application/json"); // Set content type once
-		String pathInfo = request.getPathInfo();
-		System.err.println(pathInfo);
-		// Check if pathInfo is null
-		if (pathInfo == null || pathInfo.isEmpty()) {
+    @Override
+    public void init(ServletConfig config) throws ServletException {
+        Properties props = new Properties();
+        try (InputStream input = getClass().getClassLoader().getResourceAsStream("config.properties")) {
+            if (input == null) {
+                System.err.println("Sorry, unable to find config.properties");
+                throw new ServletException("config.properties file not found.");
+            }
+            props.load(input);
+            this.config = new Config(props);
+            
+        } catch (IOException ex) {
+            ex.printStackTrace();
+            throw new ServletException("Error loading config.properties", ex);
+        }
+
+        this.outputUrl = this.config.getPeUrl();
+        this.actionManager = new ActionManager(
+            this.config.getAmSlowScanPeriod(),
+            this.config.getAmFastScanPeriod(),
+            this.config.getAmScanInterval(),
+            this.config.getAmScanTime()
+        );
+        
+        super.init(config);
+    }
+    
+    @Override
+    protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+        response.setContentType("application/json");
+        String pathInfo = request.getPathInfo();
+        
+        if (pathInfo == null || pathInfo.isEmpty()) {
             sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing path information (e.g., /boot, /measure, /scan)");
             return;
         }
 
-		String jsonString = request.getParameter("jsondata");
-		System.err.println(jsonString);
+        String jsonString = request.getParameter("jsondata");
+        System.err.println("Received pathInfo: " + pathInfo);
+        System.err.println("Received jsondata: " + jsonString);
 
         if (jsonString == null || jsonString.isEmpty()) {
             sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing 'jsondata' parameter.");
             return;
         }
 
-		try (PrintWriter writer = response.getWriter()) {
-			JSONObject jsonObj = new JSONObject(jsonString);
+        try (PrintWriter writer = response.getWriter()) {
+            JSONObject jsonObj = new JSONObject(jsonString);
+            String responseString = null;
 
-			if (PATH_BOOT.equals(pathInfo)) {
-				handleBootRequest(jsonObj, writer, response);
-			} else if (PATH_MEASURE.equals(pathInfo)) {
-				handleMeasureRequest(jsonObj, writer, response);
-			} else if (PATH_SCAN.equals(pathInfo)) {
-				handleScanRequest(jsonObj, writer, response);
-			} else {
+            if (PATH_BOOT.equals(pathInfo)) {
+                responseString = handleBootRequest(jsonObj);
+            } else if (PATH_MEASURE.equals(pathInfo)) {
+                responseString = handleMeasureRequest(jsonObj);
+            } else if (PATH_SCAN.equals(pathInfo)) {
+                responseString = handleScanRequest(jsonObj);
+            } else {
                 sendErrorResponse(response, HttpServletResponse.SC_NOT_FOUND, "Unknown path: " + pathInfo);
-			}
-			
-			writer.close();
-		} catch (JSONException e) {
+                return;
+            }
+            
+            if (responseString != null) {
+                writer.write(responseString);
+                response.setStatus(HttpServletResponse.SC_OK);
+            } else {
+                 sendErrorResponse(response, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Internal server error: Null response generated.");
+            }
+        } catch (JSONException e) {
             sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Invalid JSON format: " + e.getMessage());
         } catch (Exception e) {
             sendErrorResponse(response, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "An internal server error occurred: " + e.getMessage());
+            e.printStackTrace();
         }
-	}
+    }
 
-	/**
-	 * handle a request of type boot
-	 * @param jsonObj json object received by the request
-	 * @param writer servelet writer
-	 * @param response servelet response
-	 * @throws JSONException
-	 * @throws IOException
-	 */
-    private void handleBootRequest(JSONObject jsonObj, PrintWriter writer, HttpServletResponse response) throws JSONException, IOException {
-        if (!jsonObj.has("anchorId") || !(jsonObj.get("anchorId") instanceof String)) {
-            sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing or invalid 'anchorId' in boot request.");
-            return;
+    private synchronized String handleBootRequest(JSONObject jsonObj) throws JSONException {
+        if (!jsonObj.has("anchorID") || !(jsonObj.get("anchorID") instanceof String)) {
+            return "{\"error\":\"Missing or invalid 'anchorID' in boot request.\"}";
         }
-        String id = jsonObj.getString("anchorId");
-        System.out.println("Boot request for anchorId: " + id); // For logging
+        String id = jsonObj.getString("anchorID");
+        System.out.println("Boot request for anchorID: " + id);
 
-        // Add Anchor to Synchronizer
         Anchor anchor = new Anchor(id, LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
         this.synchronizer.addNewAnchor(anchor);
         
-        String responseString = this.getResponse(anchor);
-        
-        // Send response
-        writer.write(responseString);
-        response.setStatus(HttpServletResponse.SC_OK);
+        return this.getResponse(anchor);
     }
 
-	/**
-	 * handle a request of type measure
-	 * @param jsonObj json object received by the request
-	 * @param writer servelet writer
-	 * @param response servelet response
-	 * @throws JSONException
-	 * @throws IOException
-	 */
-    private void handleMeasureRequest(JSONObject jsonObj, PrintWriter writer, HttpServletResponse response) throws JSONException, IOException {
-        if (!jsonObj.has("anchorId") || !(jsonObj.get("anchorId") instanceof String)) {
-            sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing or invalid 'anchorId' in measure request.");
-            return;
+    private synchronized String handleMeasureRequest(JSONObject jsonObj) throws JSONException {
+        if (!jsonObj.has("anchorID") || !(jsonObj.get("anchorID") instanceof String)) {
+            return "{\"error\":\"Missing or invalid 'anchorID' in measure request.\"}";
         }
-        String anchorId = jsonObj.getString("anchorId");
+        String anchorID = jsonObj.getString("anchorID");
 
         if (!jsonObj.has("tags") || !(jsonObj.get("tags") instanceof JSONArray)) {
-            sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing or invalid 'tags' array in measure request.");
-            return;
+            return "{\"error\":\"Missing or invalid 'tags' array in measure request.\"}";
         }
         JSONArray tagArray = jsonObj.getJSONArray("tags");
 
-        Anchor anchor = this.synchronizer.listOfAnchors.get(anchorId);
-        tagArray.forEach(element -> {
-            if (element instanceof JSONObject) {
-                JSONObject obj = (JSONObject) element;
-                // Validate inner elements
-                if (obj.has("tagID") && obj.get("tagID") instanceof String &&
-                    obj.has("data") && obj.get("data") instanceof Number &&
-                    obj.has("executedAt") && obj.get("executedAt") instanceof Number) {
+        Anchor anchor = this.synchronizer.listOfAnchors.get(anchorID);
+        
+        for (int i = 0; i < tagArray.length(); i++) {
+            JSONObject obj = tagArray.getJSONObject(i);
+            
+            if (obj.has("tagID") && obj.get("tagID") instanceof String &&
+                obj.has("distance") && obj.get("distance") instanceof Number &&
+                obj.has("executedAt") && obj.get("executedAt") instanceof Number) {
 
-                    String tagID = obj.getString("tagID");
-                    Number data = obj.getNumber("data");
-                    Number executedAt = obj.getNumber("executedAt");
-                    Tag tag = this.synchronizer.listOfTags.get(tagID);
+                String tagID = obj.getString("tagID");
+                Number distance = obj.getNumber("distance");
+                Number executedAt = obj.getNumber("executedAt");
+                
+                Tag tag = this.synchronizer.listOfTags.get(tagID);
+                if (tag != null && tag.getMeasurements() != null && !tag.getMeasurements().isEmpty()) {
                     Measurement lastMeasurement = tag.getMeasurements().getLast();
                     if(lastMeasurement.checkIfValid(LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())) {
-                    	Reading reading = new Reading(anchor, data.longValue(), executedAt.longValue(), 5);
-                    	List<Reading> readings = lastMeasurement.getReadings();
-                    	readings.add(reading);
-                    	lastMeasurement.setReadings(readings);
+                        Reading reading = new Reading(anchor, distance.longValue(), executedAt.longValue(), 5);
+                        List<Reading> readings = lastMeasurement.getReadings();
+                        readings.add(reading);
+                        lastMeasurement.setReadings(readings);
                     }
-                    System.out.println("Measure: tagID=" + tagID + ", data=" + data + ", executedAt=" + executedAt);
-                    // Implement handling of measured data
-                } else {
-                    System.err.println("Invalid tag object in measure request: " + obj.toString());
+                    System.out.println("Measure: tagID=" + tagID + ", distance=" + distance + ", executedAt=" + executedAt);
                 }
+            } else {
+                System.err.println("Invalid tag object in measure request: " + obj.toString());
             }
-        });
-        String responseString = this.getResponse(anchor);
+        }
         
-        // Send response
-        writer.write(responseString);
-        response.setStatus(HttpServletResponse.SC_OK);
+        List<Tag> tagList = new ArrayList<>(this.synchronizer.listOfTags.values());
+        List<Anchor> anchorList = new ArrayList<>(this.synchronizer.listOfAnchors.values());
+        
+        if (!tagList.isEmpty() && !anchorList.isEmpty()) {
+            if (tagList.getFirst().getMeasurements().getFirst().getReadings().size() == anchorList.size()) {
+                startOutputThread(tagList);
+            }
+        }
+        
+        return this.getResponse(anchor);
     }
 
-	/**
-	 * handle a request of type scan
-	 * @param jsonObj json object received by the request
-	 * @param writer servelet writer
-	 * @param response servelet response
-	 * @throws JSONException
-	 * @throws IOException
-	 */
-    private void handleScanRequest(JSONObject jsonObj, PrintWriter writer, HttpServletResponse response) throws JSONException, IOException {
-        if (!jsonObj.has("anchorId") || !(jsonObj.get("anchorId") instanceof String)) {
-            sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing or invalid 'anchorID' in scan request.");
-            return;
+    private synchronized String handleScanRequest(JSONObject jsonObj) throws JSONException {
+        if (!jsonObj.has("anchorID") || !(jsonObj.get("anchorID") instanceof String)) {
+            return "{\"error\":\"Missing or invalid 'anchorID' in scan request.\"}";
         }
-        String anchorId = jsonObj.getString("anchorId");
+        String anchorID = jsonObj.getString("anchorID");
 
         if (!jsonObj.has("tags") || !(jsonObj.get("tags") instanceof JSONArray)) {
-            sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing or invalid 'tags' array in scan request.");
-            return;
+            return "{\"error\":\"Missing or invalid 'tags' array in scan request.\"}";
         }
         JSONArray tagArray = jsonObj.getJSONArray("tags");
 
-        tagArray.forEach(element -> {
-            if (element instanceof JSONObject) {
-                JSONObject obj = (JSONObject) element;
-                if (obj.has("tagID") && obj.get("tagID") instanceof String) {
-                    String tagID = obj.getString("tagID");
-                    Tag tag = new Tag(tagID, LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
-                    if(!this.synchronizer.tagExists(tag)) {
-                        this.synchronizer.addNewTag(tag);
-                    }
-                } else {
-                    System.err.println("Invalid tag object in scan request: " + obj.toString());
+        for (int i = 0; i < tagArray.length(); i++) {
+            JSONObject obj = tagArray.getJSONObject(i);
+            if (obj.has("tagID") && obj.get("tagID") instanceof String) {
+                String tagID = obj.getString("tagID");
+                Tag tag = new Tag(tagID, LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
+                if (!this.synchronizer.tagExists(tag)) {
+                    this.synchronizer.addNewTag(tag);
                 }
+            } else {
+                System.err.println("Invalid tag object in scan request: " + obj.toString());
             }
-        });
+        }
         
-        Anchor anchor = this.synchronizer.listOfAnchors.get(anchorId);
-        String responseString = this.getResponse(anchor);
-        
-        // Send response
-        writer.write(responseString);
-        response.setStatus(HttpServletResponse.SC_OK);
+        Anchor anchor = this.synchronizer.listOfAnchors.get(anchorID);
+        return this.getResponse(anchor);
+    }
+    
+    private void startOutputThread(List<Tag> tagList) {
+        if (tagList == null || tagList.isEmpty()) {
+            System.err.println("Tag list is null or empty. Cannot start output thread.");
+            return;
+        }
+
+        List<Tag> validTags = new ArrayList<>();
+        for (Tag tag : tagList) {
+            if (tag != null) {
+                validTags.add(tag);
+            } else {
+                System.err.println("Null tag found in the list for OutputThread. Skipping.");
+            }
+        }
+
+        try {
+            OutputThread output = new OutputThread(validTags, this.outputUrl);
+            output.start();
+        } finally {
+            this.synchronizer.addMeasurementRound(this.actionManager.getActionStartingTime(), this.actionManager.getChannelBusyUntil());
+        }
     }
     
     private String getResponse(Anchor anchor) {
-    	Action action = this.actionManager.nextAction();
-    	if(this.synchronizer.listOfTags.isEmpty()){
-    		return this.synchronizer.getSlowScanResponse(this.actionManager.getSlowScanTime());
-    	} else if(action == Action.FAST_SCAN) {
-    		return this.synchronizer.getFastScanResponse(this.actionManager.getFastScanTime());
-    	} else {
-    		String response = this.synchronizer.getMeasurmentResponse(anchor, this.actionManager.getMeasurmentTime(this.synchronizer.listOfAnchors.size(), this.synchronizer.listOfTags.size()), this.actionManager.getScanTime());
-    		List<Tag> tagList = new ArrayList<>(this.synchronizer.listOfTags.values());
-    		Tag tag = tagList.getFirst();
-    		if (!tag.getMeasurements().getLast().checkIfValid(LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())) {
-    			try {
-	    			OutputThread output = new OutputThread(new ArrayList<Tag>(this.synchronizer.listOfTags.values()), this.outputUrl);
-	    			output.run();
-    			} finally {
-    				this.synchronizer.addMeasurementRound(this.actionManager.getActionStartingTime(), this.actionManager.getChannelBusyUntil());
-				}
-			}
-    		return response;
-    	}
+        Action action = this.actionManager.nextAction();
+        String response = null;
+
+        if (this.synchronizer.listOfTags.isEmpty()){
+            response = this.synchronizer.getSlowScanResponse(this.actionManager.getSlowScanTime());
+        } else if (action == Action.FAST_SCAN) {
+            response = this.synchronizer.getFastScanResponse(this.actionManager.getFastScanTime());
+        } else {
+            response = this.synchronizer.getMeasurmentResponse(anchor, this.actionManager.getMeasurmentTime(this.synchronizer.listOfAnchors.size(), this.synchronizer.listOfTags.size()), this.actionManager.getScanTime());
+            List<Tag> tagList = new ArrayList<>(this.synchronizer.listOfTags.values());
+            if (!tagList.isEmpty()) {
+                Tag tag = tagList.getFirst();
+                if (tag != null && tag.getMeasurements().size() == 0) {
+                    this.synchronizer.addMeasurementRound(this.actionManager.getActionStartingTime(), this.actionManager.getChannelBusyUntil());
+                } else {
+                    if (tag != null && tag.getMeasurements().getLast() != null && !tag.getMeasurements().getLast().checkIfValid(LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())) {
+                        startOutputThread(new ArrayList<>(this.synchronizer.listOfTags.values()));
+                    }
+                }
+            }
+        }
+        
+        return (response != null) ? response : "{\"error\":\"Internal server error: Null response generated.\"}";
     }
 
     private void sendErrorResponse(HttpServletResponse response, int statusCode, String message) throws IOException {
         response.setStatus(statusCode);
         try (PrintWriter writer = response.getWriter()) {
-        	 writer.write(message);
+            writer.write("{\"error\": \"" + message + "\"}");
         }
     }
 }

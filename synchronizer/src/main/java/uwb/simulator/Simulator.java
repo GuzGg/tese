@@ -8,7 +8,7 @@ public class Simulator {
 	private String baseUrl;
 	
 	public Simulator(String baseUrl) {
-		this.baseUrl = baseUrl;
+		this.baseUrl = "http://localhost:8080/synchronizer/Synchronizer/";
 		this.simulatorThreads = new ArrayList<>();
 	}
 	

@@ -1,5 +1,6 @@
 package uwb.devices;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import uwb.measurements.Measurement;
@@ -13,6 +14,7 @@ public class Tag extends Device {
 	public Tag(String deviceId, long initializedAt, long lastSeen) {
 		super(deviceId, initializedAt, lastSeen);
 		this.distanceToNearestAnchor = 0;
+		this.measurements = new ArrayList<Measurement>();
 	}
 	
 	public Anchor getNearestAnchor() {
@@ -28,7 +30,7 @@ public class Tag extends Device {
 	}
 
 	public List<Measurement> getMeasurements() {
-		return measurements;
+		return this.measurements;
 	}
 
 	public void setMeasurements(List<Measurement> measurements) {

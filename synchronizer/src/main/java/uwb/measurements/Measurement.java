@@ -1,6 +1,7 @@
 package uwb.measurements;
 
 import java.util.List;
+import java.util.ArrayList;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -18,6 +19,7 @@ public class Measurement {
 		this.tag = tag;
 		this.setMeasurmentStartTime(measurmentStartTime);
 		this.setMeasurmentEndTime(measurmentEndTime);
+		this.readings = new ArrayList<Reading>();
 	}
 	
 	public boolean checkIfValid(long timestamp) {

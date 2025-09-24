@@ -8,8 +8,8 @@ import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-
 
 import org.json.JSONObject;
 
@@ -17,14 +17,14 @@ public class SimulatorThread extends Thread {
 	private VirtualAnchor anchor;
 	private String baseUrl;
 
-    private static final String PATH_BOOT = "/anchorRegistration";
-    private static final String PATH_MEASURE = "/measurementReport";
-    private static final String PATH_SCAN = "/scanReport";
+	private static final String PATH_BOOT = "/anchorRegistration";
+	private static final String PATH_MEASURE = "/measurementReport";
+	private static final String PATH_SCAN = "/scanReport";
 	
 	public SimulatorThread(VirtualAnchor anchor, String url) {
 		this.anchor = anchor;
 		this.baseUrl = url;
-	};
+	}
 	
 	public void run() {
 		
@@ -39,14 +39,15 @@ public class SimulatorThread extends Thread {
 			
 			try {
 				String actionToExecute = action.getString("actionToExecute");
-				String endpointPath = "scan".equalsIgnoreCase(actionToExecute) ? PATH_SCAN : PATH_MEASURE;
+				String endpointPath = "measure".equalsIgnoreCase(actionToExecute) ? PATH_MEASURE : PATH_SCAN;
 				URL requestUrl = new URI(this.baseUrl + endpointPath).toURL();
 				JSONObject currentReport = this.anchor.VirtualBehaviour(action);
-				
+				System.out.println(actionToExecute);
+				System.out.println(currentReport);
 				action = this.sendActionRequest(currentReport, requestUrl);
 				
 				// Add a delay to simulate a realistic device
-				Thread.sleep(1000); 
+				Thread.sleep(1000);
 
 			} catch (MalformedURLException | URISyntaxException e) {
 				System.err.println("URL error. Stopping thread.");
@@ -61,68 +62,78 @@ public class SimulatorThread extends Thread {
 		System.out.println("Anchor " + anchor.getDeviceId() + " simulation finished.");
 	}
 	
-	 private JSONObject sendRegistrationRequest() {
-	        try {
-	            URL url = new URI(this.baseUrl+PATH_BOOT).toURL();
-	            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-	            connection.setRequestMethod("POST");
-	            connection.setRequestProperty("Content-Type", "application/json");
-	            connection.setDoOutput(true);
-	            
-	            JSONObject payload = new JSONObject();
-	            payload.put("anchorID", anchor.getDeviceId());
-	            
-	            try (OutputStream os = connection.getOutputStream()) {
-	                os.write(payload.toString().getBytes(StandardCharsets.UTF_8));
-	            }
-	            
-	            int responseCode = connection.getResponseCode();
-	            System.out.println("Registration response for " + anchor.getDeviceId() + ": " + responseCode);
-	            
-	            if (responseCode == HttpURLConnection.HTTP_OK) {
-		            try (BufferedReader br = new BufferedReader(new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
-		                StringBuilder response = new StringBuilder();
-		                String responseLine;
-		                while ((responseLine = br.readLine()) != null) {
-		                    response.append(responseLine.trim());
-		                }
-		                return new JSONObject(response.toString());
-		            }
-		        } else {
-		            System.err.println("Service returned non-OK status code: " + responseCode);
-		            return null;
-		        }
+	private JSONObject sendRegistrationRequest() {
+		try {
+			URL url = new URI(this.baseUrl + PATH_BOOT).toURL();
+			HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+			connection.setRequestMethod("POST");
+			
+			// Change Content-Type to x-www-form-urlencoded
+			connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+			connection.setDoOutput(true);
+			
+			// Build the payload as a URL-encoded string with a key 'jsondata'
+			JSONObject payload = new JSONObject();
+			payload.put("anchorID", anchor.getDeviceId());
+			String encodedPayload = "jsondata=" + URLEncoder.encode(payload.toString(), StandardCharsets.UTF_8.toString());
 
-	        } catch (Exception e) {
-	            System.err.println("Registration failed for anchor " + anchor.getDeviceId() + ": " + e.getMessage());
-	            return null;
-	        }
-	    }
-	    
-	    private JSONObject sendActionRequest(JSONObject reply, URL url) throws Exception {
-	        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-	        connection.setRequestMethod("POST");
-	        connection.setRequestProperty("Content-Type", "application/json");
-	        connection.setDoOutput(true);
-	        
-	        try (OutputStream os = connection.getOutputStream()) {
-	            os.write(reply.toString().getBytes(StandardCharsets.UTF_8));
-	        }
+			try (OutputStream os = connection.getOutputStream()) {
+				os.write(encodedPayload.getBytes(StandardCharsets.UTF_8));
+			}
+			
+			int responseCode = connection.getResponseCode();
+			System.out.println("Registration response for " + anchor.getDeviceId() + ": " + responseCode);
+			
+			if (responseCode == HttpURLConnection.HTTP_OK) {
+				try (BufferedReader br = new BufferedReader(new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
+					StringBuilder response = new StringBuilder();
+					String responseLine;
+					while ((responseLine = br.readLine()) != null) {
+						response.append(responseLine.trim());
+					}
+					return new JSONObject(response.toString());
+				}
+			} else {
+				System.err.println("Service returned non-OK status code: " + responseCode);
+				return null;
+			}
+	
+		} catch (Exception e) {
+			System.err.println("Registration failed for anchor " + anchor.getDeviceId() + ": " + e.getMessage());
+			return null;
+		}
+	}
+	
+	private JSONObject sendActionRequest(JSONObject reply, URL url) throws Exception {
+		HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+		connection.setRequestMethod("POST");
+		
+		// Change Content-Type to x-www-form-urlencoded
+		connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+		connection.setDoOutput(true);
+		
+		// Build the payload as a URL-encoded string with a key 'jsondata'
+		String encodedPayload = "jsondata=" + URLEncoder.encode(reply.toString(), StandardCharsets.UTF_8.toString());
+		
+		try (OutputStream os = connection.getOutputStream()) {
+			os.write(encodedPayload.getBytes(StandardCharsets.UTF_8));
+		}
 
-	        int responseCode = connection.getResponseCode();
+		int responseCode = connection.getResponseCode();
 
-	        if (responseCode == HttpURLConnection.HTTP_OK) {
-	            try (BufferedReader br = new BufferedReader(new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
-	                StringBuilder response = new StringBuilder();
-	                String responseLine;
-	                while ((responseLine = br.readLine()) != null) {
-	                    response.append(responseLine.trim());
-	                }
-	                return new JSONObject(response.toString());
-	            }
-	        } else {
-	            System.err.println("Service returned non-OK status code: " + responseCode);
-	            return null;
-	        }
-	    }
+		if (responseCode == HttpURLConnection.HTTP_OK) {
+			try (BufferedReader br = new BufferedReader(new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
+				StringBuilder response = new StringBuilder();
+				String responseLine;
+				while ((responseLine = br.readLine()) != null) {
+					response.append(responseLine.trim());
+				}
+				
+				return new JSONObject(response.toString());
+			}
+		} else {
+			System.err.println("Service returned non-OK status code: " + responseCode);
+			return null;
+		}
+	}
 }

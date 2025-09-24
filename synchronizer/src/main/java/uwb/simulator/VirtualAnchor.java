@@ -2,6 +2,7 @@ package uwb.simulator;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,12 +18,13 @@ import uwb.devices.Tag;
 public class VirtualAnchor extends Anchor {
 	private List<Tag> listOfTags;
 	private static final AtomicInteger count = new AtomicInteger(0); 
-	private final int tagID;
+	private int tagID;
 	
 	
 	public VirtualAnchor(String deviceId, long initializedAt, long lastSeen) {
 		super(deviceId, initializedAt, lastSeen);
-		this.tagID = count.incrementAndGet(); 
+		this.tagID = count.incrementAndGet();
+		this.listOfTags = new ArrayList<Tag>();
 	}
 	
 	public JSONObject VirtualBehaviour(JSONObject response) {
@@ -31,24 +33,28 @@ public class VirtualAnchor extends Anchor {
 	    JSONObject replyPayload = new JSONObject();
 	    replyPayload.put("anchorID", getDeviceId());
 
-	    if ("scan".equals(actionToExecute)) {
+	    if ("slowScan".equals(actionToExecute) || "fastScan".equals(actionToExecute)) {
 	        Random random = new Random();
 	        
-	        if (random.nextInt(100) < 30) { 
+	        if (random.nextInt(100) < 40) { 
 	            Tag newTag = new Tag("tag" + this.tagID, LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
+	            this.tagID = count.incrementAndGet();
 	            this.listOfTags.add(newTag);
 	        }
 	        
 	        JSONArray tagsArray = new JSONArray();
-	        this.listOfTags.forEach(tag -> {
-	            JSONObject tagObj = new JSONObject();
-	            tagObj.put("tagID", tag.getDeviceId());
-	            tagsArray.put(tagObj);
-	        });
+	        if(!this.listOfTags.isEmpty()) {
+		        this.listOfTags.forEach(tag -> {
+		            JSONObject tagObj = new JSONObject();
+		            tagObj.put("tagID", tag.getDeviceId());
+		            tagsArray.put(tagObj);
+		        });
+	        }
+
 	        
 	        replyPayload.put("tags", tagsArray);
 	        
-	    } else if ("measurement".equals(actionToExecute)) {
+	    } else if ("measure".equals(actionToExecute)) {
 	        Random random = new Random();
 	        
 	        JSONArray responseTags = response.getJSONArray("tags");
@@ -76,7 +82,7 @@ public class VirtualAnchor extends Anchor {
 	        
 	        replyPayload.put("tags", tagsArray);
 	    }
-	    
+	    System.out.println(replyPayload);
 	    return replyPayload;
 	}
 }
