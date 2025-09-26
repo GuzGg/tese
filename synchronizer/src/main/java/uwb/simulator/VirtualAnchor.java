@@ -17,13 +17,12 @@ import uwb.devices.Tag;
 
 public class VirtualAnchor extends Anchor {
 	private List<Tag> listOfTags;
-	private static final AtomicInteger count = new AtomicInteger(0); 
 	private int tagID;
 	
 	
 	public VirtualAnchor(String deviceId, long initializedAt, long lastSeen) {
 		super(deviceId, initializedAt, lastSeen);
-		this.tagID = count.incrementAndGet();
+		this.tagID = 0;
 		this.listOfTags = new ArrayList<Tag>();
 	}
 	
@@ -38,7 +37,7 @@ public class VirtualAnchor extends Anchor {
 	        
 	        if (random.nextInt(100) < 40) { 
 	            Tag newTag = new Tag("tag" + this.tagID, LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
-	            this.tagID = count.incrementAndGet();
+	            this.tagID += 1;
 	            this.listOfTags.add(newTag);
 	        }
 	        
