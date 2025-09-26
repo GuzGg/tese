@@ -1,7 +1,5 @@
 package uwb.database;
 
-// Removed: import javax.sql.DataSource; // NO LONGER NEEDED
-
 import uwb.config.Config;
 import uwb.devices.Anchor;
 import uwb.devices.Tag;
@@ -15,6 +13,8 @@ import java.sql.Statement;
 import java.sql.Types;
 import java.util.List;
 
+import javax.sql.DataSource; 
+
 public class MeasurementsDatabaseLogger {
 
     private final String DB_URL_BASE;
@@ -23,14 +23,13 @@ public class MeasurementsDatabaseLogger {
     private final String USER;
     private final String PASSWORD;
 
-    // REMOVED: private final DataSource dataSource; // NO LONGER NEEDED
+    private final DataSource dataSource; 
 
     /**
-     * Constructor no longer accepts a DataSource.
-     * @param config The application configuration object.
+     * Constructor accepts a DataSource (for connection pooling) for thread-safe access.
      */
-    public MeasurementsDatabaseLogger(Config config) {
-        // this.dataSource = dataSource; // REMOVED
+    public MeasurementsDatabaseLogger(DataSource dataSource, Config config) {
+        this.dataSource = dataSource; 
         this.DB_URL_BASE = config.getDbUrl();
         this.DB_NAME = config.getDbName();
         this.USER = config.getDbUsername();
@@ -38,10 +37,6 @@ public class MeasurementsDatabaseLogger {
         this.DB_URL = this.DB_URL_BASE + "/" + this.DB_NAME;
     }
     
-    /**
-     * Helper to set a double value or NULL if the value is zero (indicating unknown position/orientation).
-     * This is used to map the hardcoded 0.0 value to SQL NULL when position is unknown.
-     */
     private void setDoubleOrNull(PreparedStatement stmt, int index, double value) throws SQLException {
         if (value == 0.0) { 
             stmt.setNull(index, Types.DOUBLE);
@@ -51,22 +46,22 @@ public class MeasurementsDatabaseLogger {
     }
 
     /**
-     * Initializes the database and tables if they do not exist.
+     * Initializes the database and tables if they do not exist. (Uses DriverManager for setup only)
      */
     public synchronized void initializeDatabase() {
         try {
-            // Create database if it doesn't exist
+            // Create database if it doesn't exist (using DB_URL_BASE)
             try (Connection conn = DriverManager.getConnection(this.DB_URL_BASE, this.USER, this.PASSWORD);
                  Statement stmt = conn.createStatement()) {
                 stmt.executeUpdate("CREATE DATABASE IF NOT EXISTS " + this.DB_NAME);
                 System.out.println("Database ensured: " + this.DB_NAME);
             }
 
-            // Create tables if they don't exist
+            // Create tables if they don't exist (using full DB_URL)
             try (Connection conn = DriverManager.getConnection(this.DB_URL, this.USER, this.PASSWORD);
                  Statement stmt = conn.createStatement()) {
 
-                // Targets Table (targetCode is the device ID string)
+                // Targets Table
                 stmt.execute("""
                 CREATE TABLE IF NOT EXISTS Targets (
                     targetID INT AUTO_INCREMENT PRIMARY KEY,
@@ -101,7 +96,7 @@ public class MeasurementsDatabaseLogger {
                     );
                 """);
                 
-                // AoAreadings Table (RE-ADDED)
+                // AoAreadings Table
                 stmt.execute("""
                 CREATE TABLE IF NOT EXISTS AoAreadings (
                     readingID INT AUTO_INCREMENT PRIMARY KEY,
@@ -164,11 +159,6 @@ public class MeasurementsDatabaseLogger {
         }
     }
 
-    /**
-     * Inserts/updates the Target and returns the auto-generated targetID (INT PK).
-     * @param target The tag device.
-     * @return The targetID (INT) from the database, or -1 on failure.
-     */
     public synchronized int saveTarget(Tag target){
         final String sql = """
             INSERT INTO Targets (targetCode, targetName) 
@@ -176,8 +166,7 @@ public class MeasurementsDatabaseLogger {
             ON DUPLICATE KEY UPDATE targetName = VALUES(targetName)
             """;
         
-        // FIXED: Using DriverManager
-        try (Connection conn = DriverManager.getConnection(this.DB_URL, this.USER, this.PASSWORD); 
+        try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
              
             stmt.setString(1, target.getDeviceName());
@@ -191,7 +180,6 @@ public class MeasurementsDatabaseLogger {
                 }
             }
             
-            // Fallback: If ON DUPLICATE KEY UPDATE doesn't return keys (MariaDB/MySQL behavior), query by code.
             return getTargetIdByCode(target.getDeviceName()); 
 
         } catch (SQLException e) {
@@ -201,21 +189,13 @@ public class MeasurementsDatabaseLogger {
         }
     }
 
-    /**
-     * Inserts a new measurement record and returns the auto-generated measurementID.
-     * @param targetID The foreign key for the target (INT).
-     * @param method The data type (ToA/AoA).
-     * @param timestamp The consistent timestamp for the measurement.
-     * @return The measurementID from the database, or -1 on failure.
-     */
     public int saveMeasurements(int targetID, String method, long timestamp){
         final String sql = """
             INSERT INTO Measurements (targetID, timestamp, dataType) 
             VALUES (?, ?, ?)
             """;
         
-        // FIXED: Using DriverManager
-        try (Connection conn = DriverManager.getConnection(this.DB_URL, this.USER, this.PASSWORD);
+        try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             
             stmt.setInt(1, targetID); 
@@ -236,12 +216,6 @@ public class MeasurementsDatabaseLogger {
         return -1; 
     }
     
-    /**
-     * Inserts or updates a single Anchor record and returns its database ID.
-     * This is useful for initial anchor registration (boot request).
-     * @param anchor The Anchor device instance.
-     * @return The anchorID (INT) from the database, or -1 on failure.
-     */
     public synchronized int saveAnchor(Anchor anchor) {
         final String sql = """
             INSERT INTO Anchors (anchorCode, anchorName, anchorX, anchorY, anchorZ, anchorAlpha, anchorBeta, anchorGamma) 
@@ -256,21 +230,18 @@ public class MeasurementsDatabaseLogger {
                 anchorGamma = VALUES(anchorGamma)
             """;
         
-        // FIXED: Using DriverManager
-        try (Connection conn = DriverManager.getConnection(this.DB_URL, this.USER, this.PASSWORD);
+        try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             
             stmt.setString(1, anchor.getDeviceName());
             stmt.setString(2, anchor.getDeviceName()); 
             
-            // NOTE: Assuming Anchor has methods like getX(), getY(), etc., returning double.
-            // Using placeholder '0' if the actual device properties are not yet available in the Anchor object.
-            setDoubleOrNull(stmt, 3, 0); // anchor.getX()
-            setDoubleOrNull(stmt, 4, 0); // anchor.getY()
-            setDoubleOrNull(stmt, 5, 0); // anchor.getZ()
-            setDoubleOrNull(stmt, 6, 0); // anchor.getAlpha()
-            setDoubleOrNull(stmt, 7, 0); // anchor.getBeta()
-            setDoubleOrNull(stmt, 8, 0); // anchor.getGamma()
+            setDoubleOrNull(stmt, 3, 0); 
+            setDoubleOrNull(stmt, 4, 0);
+            setDoubleOrNull(stmt, 5, 0);
+            setDoubleOrNull(stmt, 6, 0);
+            setDoubleOrNull(stmt, 7, 0);
+            setDoubleOrNull(stmt, 8, 0);
             
             stmt.executeUpdate();
             
@@ -280,7 +251,6 @@ public class MeasurementsDatabaseLogger {
                 }
             }
             
-            // Fallback: Query the ID if generated keys are not returned on update
             return getAnchorIdByCode(anchor.getDeviceName());
             
         } catch (SQLException e) {
@@ -304,15 +274,13 @@ public class MeasurementsDatabaseLogger {
                 anchorGamma = VALUES(anchorGamma)
             """;
         
-        // FIXED: Using DriverManager
-        try (Connection conn = DriverManager.getConnection(this.DB_URL, this.USER, this.PASSWORD);
+        try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             
             for (Anchor anchor : anchors) {
                 stmt.setString(1, anchor.getDeviceName());
                 stmt.setString(2, anchor.getDeviceName()); 
                 
-                // NOTE: Using placeholder '0' as in your original code
                 setDoubleOrNull(stmt, 3, 0);
                 setDoubleOrNull(stmt, 4, 0);
                 setDoubleOrNull(stmt, 5, 0);
@@ -324,7 +292,6 @@ public class MeasurementsDatabaseLogger {
 
             stmt.executeBatch();
             
-            // IMPORTANT: Fetch IDs one by one after batch execution
             return anchors.stream()
                          .map(a -> getAnchorIdByCode(a.getDeviceName()))
                          .toList();
@@ -342,7 +309,7 @@ public class MeasurementsDatabaseLogger {
             VALUES (?, ?, ?, ?) 
             """;
         
-        try (Connection conn = DriverManager.getConnection(this.DB_URL, this.USER, this.PASSWORD);
+        try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
 
             for (int i = 0; i < anchors.size(); i++) {
@@ -367,8 +334,7 @@ public class MeasurementsDatabaseLogger {
 
     public int getTargetIdByCode(String targetCode) {
         final String sql = "SELECT targetID FROM Targets WHERE targetCode = ?";
-        // FIXED: Using DriverManager
-        try (Connection conn = DriverManager.getConnection(this.DB_URL, this.USER, this.PASSWORD);
+        try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, targetCode);
             try (ResultSet rs = stmt.executeQuery()) {
@@ -385,8 +351,7 @@ public class MeasurementsDatabaseLogger {
 
     public int getAnchorIdByCode(String anchorCode) {
         final String sql = "SELECT anchorID FROM Anchors WHERE anchorCode = ?";
-        // FIXED: Using DriverManager
-        try (Connection conn = DriverManager.getConnection(this.DB_URL, this.USER, this.PASSWORD);
+        try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, anchorCode);
             try (ResultSet rs = stmt.executeQuery()) {
@@ -404,8 +369,7 @@ public class MeasurementsDatabaseLogger {
     public void clearTable(String tableName) throws SQLException {
         String query = "DELETE FROM " + tableName;
 
-        // FIXED: Using DriverManager
-        try (Connection conn = DriverManager.getConnection(this.DB_URL, this.USER, this.PASSWORD);
+        try (Connection conn = dataSource.getConnection();
              PreparedStatement stmt = conn.prepareStatement(query)) {
             stmt.executeUpdate();
         }

@@ -3,12 +3,16 @@ package uwb.communications;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintWriter;
+import java.sql.Connection; 
+import java.sql.DriverManager; 
+import java.sql.SQLException; 
+import java.sql.SQLFeatureNotSupportedException; 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
-import java.util.Scanner;
+import java.util.logging.Logger; 
 
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
@@ -16,6 +20,7 @@ import javax.servlet.annotation.WebServlet;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.sql.DataSource; 
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -81,22 +86,41 @@ public class Sync extends HttpServlet {
             this.config.getAmScanTime()
         );
         
-        // **********************************************
-        // ********* FIX: INITIALIZE LOGGER **********
-        // **********************************************
-        // REMOVED: javax.sql.DataSource dummyDataSource = null; 
+        // --- DATA SOURCE SETUP (CRITICAL FOR STABILITY) ---
         
+        final String dbUrl = this.config.getDbUrl() + "/" + this.config.getDbName();
+        final String user = this.config.getDbUsername();
+        final String password = this.config.getDbPassword();
+
+        // Anonymous Inner Class implementation of DataSource to safely get connections
+        DataSource dataSource = new DataSource() {
+            @Override
+            public Connection getConnection() throws SQLException {
+                return DriverManager.getConnection(dbUrl, user, password);
+            }
+
+            @Override
+            public Connection getConnection(String username, String password) throws SQLException { return getConnection(); }
+            @Override public PrintWriter getLogWriter() throws SQLException { return null; }
+            @Override public void setLogWriter(PrintWriter out) throws SQLException { /* NOP */ }
+            @Override public void setLoginTimeout(int seconds) throws SQLException { /* NOP */ } // FIXED: Changed return to NOP
+            @Override public int getLoginTimeout() throws SQLException { return 0; }
+            @Override public <T> T unwrap(Class<T> iface) throws SQLException { throw new SQLException("Not supported"); }
+            @Override public boolean isWrapperFor(Class<?> iface) throws SQLException { return false; }
+            @Override public Logger getParentLogger() throws SQLFeatureNotSupportedException { throw new SQLFeatureNotSupportedException("Not supported"); }
+        };
+
         try {
-            // Logger now only accepts Config object
-            this.dbLogger = new MeasurementsDatabaseLogger(this.config);
-            this.dbLogger.initializeDatabase();
+            this.dbLogger = new MeasurementsDatabaseLogger(dataSource, this.config); 
+            this.dbLogger.initializeDatabase(); 
             
+            // The output manager is configured using peUrl from config.properties
             this.outputManager = new OutputThread(this.config.getPeUrl(), this.dbLogger);
             
         } catch (Exception e) {
-            throw new ServletException("Failed to initialize database or output manager.", e);
+            throw new ServletException("Failed to initialize database connection or output manager. " + 
+                                       "Check database credentials/availability.", e);
         }
-        // **********************************************
     }
     
     @Override
@@ -118,7 +142,7 @@ public class Sync extends HttpServlet {
             return;
         }
 
-        // --- FIX: Read as FORM PARAMETER since client uses x-www-form-urlencoded ---
+        // Reading as FORM PARAMETER
         String jsonString = request.getParameter("jsondata"); 
 
         if (jsonString == null || jsonString.isEmpty()) {
@@ -129,7 +153,6 @@ public class Sync extends HttpServlet {
         String responseString = null;
 
         try {
-            // FIX: Trim the parameter's value to remove leading/trailing spaces/newlines
             String trimmedJson = jsonString.trim();
             
             if (trimmedJson.isEmpty()) {
@@ -137,7 +160,7 @@ public class Sync extends HttpServlet {
                 return;
             }
 
-            JSONObject jsonObj = new JSONObject(trimmedJson);
+            JSONObject jsonObj = new JSONObject(trimmedJson); 
 
             if (PATH_BOOT.equals(pathInfo)) {
                 responseString = handleBootRequest(jsonObj);
@@ -150,7 +173,6 @@ public class Sync extends HttpServlet {
                 return;
             }
             
-            // --- Explicit Response Write ---
             if (responseString != null) {
                 response.setStatus(HttpServletResponse.SC_OK);
                 try (PrintWriter writer = response.getWriter()) {
@@ -161,7 +183,6 @@ public class Sync extends HttpServlet {
                  sendErrorResponse(response, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Internal server error: Null response generated.");
             }
         } catch (JSONException e) {
-            // The trimmedJson now contains the malformed content, which helps debugging.
             sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Invalid JSON format: " + e.getMessage());
         } catch (Exception e) {
             sendErrorResponse(response, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "An internal server error occurred: " + e.getMessage());
@@ -222,10 +243,14 @@ public class Sync extends HttpServlet {
         List<Tag> tagList = new ArrayList<>(this.synchronizer.listOfTags.values());
         List<Anchor> anchorList = new ArrayList<>(this.synchronizer.listOfAnchors.values());
         
-        // Condition to trigger output: all tags have readings from all anchors
         if (!tagList.isEmpty() && !anchorList.isEmpty() && tagList.getFirst() != null && tagList.getFirst().getMeasurements() != null && !tagList.getFirst().getMeasurements().isEmpty()) {
+            // Check if a full measurement round is complete for the first tag
             if (tagList.getFirst().getMeasurements().getLast().getReadings().size() == anchorList.size()) {
+                // 1. Submit completed data for output
                 startOutputProcess(tagList);
+                
+                // 2. Reset the state for the next round (Completion Trigger)
+                this.synchronizer.addMeasurementRound(this.actionManager.getActionStartingTime(), this.actionManager.getChannelBusyUntil());
             }
         }
         
@@ -259,8 +284,6 @@ public class Sync extends HttpServlet {
         return this.getResponse(anchor);
     }
     
-    // --- ASYNCHRONOUS OUTPUT METHOD ---
-    
     private void startOutputProcess(List<Tag> tagList) {
         if (tagList == null || tagList.isEmpty()) {
             return;
@@ -278,11 +301,7 @@ public class Sync extends HttpServlet {
         }
 
         this.outputManager.submitTagBatch(validTags);
-
-        this.synchronizer.addMeasurementRound(this.actionManager.getActionStartingTime(), this.actionManager.getChannelBusyUntil());
     }
-    
-    // --- RESPONSE AND ERROR METHODS ---
     
     private String getResponse(Anchor anchor) {
         Action action = this.actionManager.nextAction();
@@ -300,14 +319,14 @@ public class Sync extends HttpServlet {
             if (!tagList.isEmpty()) {
                 Tag tag = tagList.getFirst();
                 if (tag != null) {
-                    if (tag.getMeasurements().isEmpty() || 
-                        !tag.getMeasurements().getLast().checkIfValid(LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())) {
+                    
+                    long now = LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+
+                    boolean isStale = !tag.getMeasurements().isEmpty() && !tag.getMeasurements().getLast().checkIfValid(now);
+
+                    if (isStale) {
+                        startOutputProcess(new ArrayList<>(this.synchronizer.listOfTags.values()));
                         
-                        if (!tag.getMeasurements().isEmpty() && 
-                            !tag.getMeasurements().getLast().checkIfValid(LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())) {
-                            
-                            startOutputProcess(new ArrayList<>(this.synchronizer.listOfTags.values()));
-                        }
                         this.synchronizer.addMeasurementRound(this.actionManager.getActionStartingTime(), this.actionManager.getChannelBusyUntil());
                     }
                 }
