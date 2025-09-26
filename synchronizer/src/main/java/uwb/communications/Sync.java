@@ -8,6 +8,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
+import java.util.Scanner;
 
 import javax.servlet.ServletConfig;
 import javax.servlet.ServletException;
@@ -21,6 +22,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import uwb.config.Config;
+import uwb.database.MeasurementsDatabaseLogger; 
 import uwb.devices.Anchor;
 import uwb.devices.Tag;
 import uwb.managers.ActionManager;
@@ -29,7 +31,7 @@ import uwb.measurements.Measurement;
 import uwb.measurements.Reading;
 import uwb.managers.ActionManager.Action;
 
-@WebServlet("/Synchronizer/*")
+@WebServlet(urlPatterns = "/Synchronizer/*", loadOnStartup = 1) 
 public class Sync extends HttpServlet {
     private static final long serialVersionUID = 1L;
 
@@ -37,9 +39,13 @@ public class Sync extends HttpServlet {
     private static final String PATH_MEASURE = "/measurementReport";
     private static final String PATH_SCAN = "/scanReport";
     
-    private ActionManager actionManager = new ActionManager();
+    // Core Managers
+    private ActionManager actionManager;
     private Synchronizer synchronizer = new Synchronizer();
-    private String outputUrl;
+    
+    // Database and Output Handlers
+    private MeasurementsDatabaseLogger dbLogger; 
+    private OutputThread outputManager;         
     private Config config;
 
     public Sync() {
@@ -47,22 +53,27 @@ public class Sync extends HttpServlet {
     }
 
     @Override
-    public void init(ServletConfig config) throws ServletException {
+    public void init(ServletConfig servletConfig) throws ServletException {
+        super.init(servletConfig);
+        
+        try {
+            Class.forName("org.mariadb.jdbc.Driver");
+        } catch (ClassNotFoundException e) {
+            throw new ServletException("Missing JDBC Driver. MariaDB JDBC Driver not found.", e);
+        }
+        
         Properties props = new Properties();
         try (InputStream input = getClass().getClassLoader().getResourceAsStream("config.properties")) {
             if (input == null) {
-                System.err.println("Sorry, unable to find config.properties");
                 throw new ServletException("config.properties file not found.");
             }
             props.load(input);
             this.config = new Config(props);
             
         } catch (IOException ex) {
-            ex.printStackTrace();
             throw new ServletException("Error loading config.properties", ex);
         }
-
-        this.outputUrl = this.config.getPeUrl();
+        
         this.actionManager = new ActionManager(
             this.config.getAmSlowScanPeriod(),
             this.config.getAmFastScanPeriod(),
@@ -70,31 +81,63 @@ public class Sync extends HttpServlet {
             this.config.getAmScanTime()
         );
         
-        super.init(config);
+        // **********************************************
+        // ********* FIX: INITIALIZE LOGGER **********
+        // **********************************************
+        // REMOVED: javax.sql.DataSource dummyDataSource = null; 
+        
+        try {
+            // Logger now only accepts Config object
+            this.dbLogger = new MeasurementsDatabaseLogger(this.config);
+            this.dbLogger.initializeDatabase();
+            
+            this.outputManager = new OutputThread(this.config.getPeUrl(), this.dbLogger);
+            
+        } catch (Exception e) {
+            throw new ServletException("Failed to initialize database or output manager.", e);
+        }
+        // **********************************************
+    }
+    
+    @Override
+    public void destroy() {
+        if (this.outputManager != null) {
+            this.outputManager.shutdown();
+        }
+        super.destroy();
     }
     
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
         response.setContentType("application/json");
+        response.setCharacterEncoding("UTF-8");
         String pathInfo = request.getPathInfo();
         
         if (pathInfo == null || pathInfo.isEmpty()) {
-            sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing path information (e.g., /boot, /measure, /scan)");
+            sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing path information.");
             return;
         }
 
-        String jsonString = request.getParameter("jsondata");
-        System.err.println("Received pathInfo: " + pathInfo);
-        System.err.println("Received jsondata: " + jsonString);
+        // --- FIX: Read as FORM PARAMETER since client uses x-www-form-urlencoded ---
+        String jsonString = request.getParameter("jsondata"); 
 
         if (jsonString == null || jsonString.isEmpty()) {
-            sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing 'jsondata' parameter.");
+            sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing 'jsondata' parameter in the form data.");
             return;
         }
 
-        try (PrintWriter writer = response.getWriter()) {
-            JSONObject jsonObj = new JSONObject(jsonString);
-            String responseString = null;
+        String responseString = null;
+
+        try {
+            // FIX: Trim the parameter's value to remove leading/trailing spaces/newlines
+            String trimmedJson = jsonString.trim();
+            
+            if (trimmedJson.isEmpty()) {
+                sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "JSON payload contained only whitespace.");
+                return;
+            }
+
+            JSONObject jsonObj = new JSONObject(trimmedJson);
 
             if (PATH_BOOT.equals(pathInfo)) {
                 responseString = handleBootRequest(jsonObj);
@@ -107,13 +150,18 @@ public class Sync extends HttpServlet {
                 return;
             }
             
+            // --- Explicit Response Write ---
             if (responseString != null) {
-                writer.write(responseString);
                 response.setStatus(HttpServletResponse.SC_OK);
+                try (PrintWriter writer = response.getWriter()) {
+                    writer.write(responseString);
+                    writer.flush();
+                }
             } else {
                  sendErrorResponse(response, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Internal server error: Null response generated.");
             }
         } catch (JSONException e) {
+            // The trimmedJson now contains the malformed content, which helps debugging.
             sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Invalid JSON format: " + e.getMessage());
         } catch (Exception e) {
             sendErrorResponse(response, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "An internal server error occurred: " + e.getMessage());
@@ -121,20 +169,20 @@ public class Sync extends HttpServlet {
         }
     }
 
-    private synchronized String handleBootRequest(JSONObject jsonObj) throws JSONException {
+    private String handleBootRequest(JSONObject jsonObj) throws JSONException {
         if (!jsonObj.has("anchorID") || !(jsonObj.get("anchorID") instanceof String)) {
             return "{\"error\":\"Missing or invalid 'anchorID' in boot request.\"}";
         }
-        String id = jsonObj.getString("anchorID");
-        System.out.println("Boot request for anchorID: " + id);
 
+        String id = jsonObj.getString("anchorID");	
         Anchor anchor = new Anchor(id, LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
+        anchor.setDeviceID(this.dbLogger.saveAnchor(anchor));
         this.synchronizer.addNewAnchor(anchor);
         
         return this.getResponse(anchor);
     }
 
-    private synchronized String handleMeasureRequest(JSONObject jsonObj) throws JSONException {
+    private String handleMeasureRequest(JSONObject jsonObj) throws JSONException {
         if (!jsonObj.has("anchorID") || !(jsonObj.get("anchorID") instanceof String)) {
             return "{\"error\":\"Missing or invalid 'anchorID' in measure request.\"}";
         }
@@ -167,26 +215,24 @@ public class Sync extends HttpServlet {
                         readings.add(reading);
                         lastMeasurement.setReadings(readings);
                     }
-                    System.out.println("Measure: tagID=" + tagID + ", distance=" + distance + ", executedAt=" + executedAt);
                 }
-            } else {
-                System.err.println("Invalid tag object in measure request: " + obj.toString());
             }
         }
         
         List<Tag> tagList = new ArrayList<>(this.synchronizer.listOfTags.values());
         List<Anchor> anchorList = new ArrayList<>(this.synchronizer.listOfAnchors.values());
         
-        if (!tagList.isEmpty() && !anchorList.isEmpty()) {
-            if (tagList.getFirst().getMeasurements().getFirst().getReadings().size() == anchorList.size()) {
-                startOutputThread(tagList);
+        // Condition to trigger output: all tags have readings from all anchors
+        if (!tagList.isEmpty() && !anchorList.isEmpty() && tagList.getFirst() != null && tagList.getFirst().getMeasurements() != null && !tagList.getFirst().getMeasurements().isEmpty()) {
+            if (tagList.getFirst().getMeasurements().getLast().getReadings().size() == anchorList.size()) {
+                startOutputProcess(tagList);
             }
         }
         
         return this.getResponse(anchor);
     }
 
-    private synchronized String handleScanRequest(JSONObject jsonObj) throws JSONException {
+    private String handleScanRequest(JSONObject jsonObj) throws JSONException {
         if (!jsonObj.has("anchorID") || !(jsonObj.get("anchorID") instanceof String)) {
             return "{\"error\":\"Missing or invalid 'anchorID' in scan request.\"}";
         }
@@ -203,10 +249,9 @@ public class Sync extends HttpServlet {
                 String tagID = obj.getString("tagID");
                 Tag tag = new Tag(tagID, LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
                 if (!this.synchronizer.tagExists(tag)) {
+                    tag.setDeviceID(this.dbLogger.saveTarget(tag));
                     this.synchronizer.addNewTag(tag);
                 }
-            } else {
-                System.err.println("Invalid tag object in scan request: " + obj.toString());
             }
         }
         
@@ -214,9 +259,10 @@ public class Sync extends HttpServlet {
         return this.getResponse(anchor);
     }
     
-    private void startOutputThread(List<Tag> tagList) {
+    // --- ASYNCHRONOUS OUTPUT METHOD ---
+    
+    private void startOutputProcess(List<Tag> tagList) {
         if (tagList == null || tagList.isEmpty()) {
-            System.err.println("Tag list is null or empty. Cannot start output thread.");
             return;
         }
 
@@ -224,22 +270,25 @@ public class Sync extends HttpServlet {
         for (Tag tag : tagList) {
             if (tag != null) {
                 validTags.add(tag);
-            } else {
-                System.err.println("Null tag found in the list for OutputThread. Skipping.");
             }
         }
-
-        try {
-            OutputThread output = new OutputThread(validTags, this.outputUrl);
-            output.start();
-        } finally {
-            this.synchronizer.addMeasurementRound(this.actionManager.getActionStartingTime(), this.actionManager.getChannelBusyUntil());
+        
+        if (validTags.isEmpty()) {
+            return;
         }
+
+        this.outputManager.submitTagBatch(validTags);
+
+        this.synchronizer.addMeasurementRound(this.actionManager.getActionStartingTime(), this.actionManager.getChannelBusyUntil());
     }
+    
+    // --- RESPONSE AND ERROR METHODS ---
     
     private String getResponse(Anchor anchor) {
         Action action = this.actionManager.nextAction();
         String response = null;
+
+        List<Tag> tagList = new ArrayList<>(this.synchronizer.listOfTags.values());
 
         if (this.synchronizer.listOfTags.isEmpty()){
             response = this.synchronizer.getSlowScanResponse(this.actionManager.getSlowScanTime());
@@ -247,14 +296,19 @@ public class Sync extends HttpServlet {
             response = this.synchronizer.getFastScanResponse(this.actionManager.getFastScanTime());
         } else {
             response = this.synchronizer.getMeasurmentResponse(anchor, this.actionManager.getMeasurmentTime(this.synchronizer.listOfAnchors.size(), this.synchronizer.listOfTags.size()), this.actionManager.getScanTime());
-            List<Tag> tagList = new ArrayList<>(this.synchronizer.listOfTags.values());
+            
             if (!tagList.isEmpty()) {
                 Tag tag = tagList.getFirst();
-                if (tag != null && tag.getMeasurements().size() == 0) {
-                    this.synchronizer.addMeasurementRound(this.actionManager.getActionStartingTime(), this.actionManager.getChannelBusyUntil());
-                } else {
-                    if (tag != null && tag.getMeasurements().getLast() != null && !tag.getMeasurements().getLast().checkIfValid(LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())) {
-                        startOutputThread(new ArrayList<>(this.synchronizer.listOfTags.values()));
+                if (tag != null) {
+                    if (tag.getMeasurements().isEmpty() || 
+                        !tag.getMeasurements().getLast().checkIfValid(LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())) {
+                        
+                        if (!tag.getMeasurements().isEmpty() && 
+                            !tag.getMeasurements().getLast().checkIfValid(LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())) {
+                            
+                            startOutputProcess(new ArrayList<>(this.synchronizer.listOfTags.values()));
+                        }
+                        this.synchronizer.addMeasurementRound(this.actionManager.getActionStartingTime(), this.actionManager.getChannelBusyUntil());
                     }
                 }
             }
@@ -267,6 +321,7 @@ public class Sync extends HttpServlet {
         response.setStatus(statusCode);
         try (PrintWriter writer = response.getWriter()) {
             writer.write("{\"error\": \"" + message + "\"}");
+            writer.flush();
         }
     }
 }

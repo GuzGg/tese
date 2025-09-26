@@ -36,7 +36,7 @@ public class Synchronizer {
 	 * @param anchor anchor to be added to the map
 	 */
 	public synchronized void addNewAnchor(Anchor anchor) {
-		this.listOfAnchors.put(anchor.getDeviceId(), anchor);
+		this.listOfAnchors.put(anchor.getDeviceName(), anchor);
 	}
 	
 	/**
@@ -45,7 +45,7 @@ public class Synchronizer {
 	 * @return if an anchor exists or not
 	 */
 	public boolean anchorExists(Anchor anchor) {
-		return this.listOfAnchors.containsKey(anchor.getDeviceId());
+		return this.listOfAnchors.containsKey(anchor.getDeviceName());
 	}
 	
 	/**
@@ -53,7 +53,7 @@ public class Synchronizer {
 	 * @param tag tag to be added
 	 */
 	public synchronized void addNewTag(Tag tag) {
-		this.listOfTags.put(tag.getDeviceId(), tag);
+		this.listOfTags.put(tag.getDeviceName(), tag);
 	}
 	
 	/**
@@ -62,7 +62,7 @@ public class Synchronizer {
 	 * @return if an tag exists or not
 	 */
 	public boolean tagExists(Tag tag) {
-		return this.listOfTags.containsKey(tag.getDeviceId());
+		return this.listOfTags.containsKey(tag.getDeviceName());
 	}
 	
 	public synchronized void addMeasurementRound(long startTime, long endTime) {
@@ -129,7 +129,7 @@ public class Synchronizer {
 	            
 	            // Create a JSONObject for each tag
 	            JSONObject tagJson = new JSONObject();
-	            tagJson.put("deviceID", tag.getDeviceId());
+	            tagJson.put("deviceID", tag.getDeviceName());
 	            tagJson.put("whenToExecute", timeToMeasure);
 
 	            tagsArray.put(tagJson);

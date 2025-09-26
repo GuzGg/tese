@@ -5,25 +5,33 @@ package uwb.devices;
  */
 public abstract class Device {
 	
-	public String deviceId;
+	public int deviceID;
+	public String deviceName;
 	public long initializedAt;
 	public long lastSeen;
 	public boolean alive;
 	
-	public Device(String deviceId, long initializedAt, long lastSeen) {
-		super();
-		this.deviceId = deviceId;
+	public Device(String deviceName, long initializedAt, long lastSeen) {
+		this.deviceName = deviceName;
 		this.initializedAt = initializedAt;
 		this.lastSeen = lastSeen;
 		this.alive = true;
 	}
 	
-	public String getDeviceId() {
-		return deviceId;
+	public int getDeviceID () {
+		return this.deviceID;
 	}
 	
-	public void setDeviceId(String deviceId) {
-		this.deviceId = deviceId;
+	public void setDeviceID(int deviceID) {
+		this.deviceID = deviceID;
+	}
+	
+	public String getDeviceName() {
+		return deviceName;
+	}
+	
+	public void setDeviceName(String deviceId) {
+		this.deviceName = deviceId;
 	}
 	
 	public long getinitializedAt() {

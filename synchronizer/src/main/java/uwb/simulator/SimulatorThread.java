@@ -59,7 +59,7 @@ public class SimulatorThread extends Thread {
 			}
 		}
 		
-		System.out.println("Anchor " + anchor.getDeviceId() + " simulation finished.");
+		System.out.println("Anchor " + anchor.getDeviceName() + " simulation finished.");
 	}
 	
 	private JSONObject sendRegistrationRequest() {
@@ -74,7 +74,7 @@ public class SimulatorThread extends Thread {
 			
 			// Build the payload as a URL-encoded string with a key 'jsondata'
 			JSONObject payload = new JSONObject();
-			payload.put("anchorID", anchor.getDeviceId());
+			payload.put("anchorID", anchor.getDeviceName());
 			String encodedPayload = "jsondata=" + URLEncoder.encode(payload.toString(), StandardCharsets.UTF_8.toString());
 
 			try (OutputStream os = connection.getOutputStream()) {
@@ -82,7 +82,7 @@ public class SimulatorThread extends Thread {
 			}
 			
 			int responseCode = connection.getResponseCode();
-			System.out.println("Registration response for " + anchor.getDeviceId() + ": " + responseCode);
+			System.out.println("Registration response for " + anchor.getDeviceName() + ": " + responseCode);
 			
 			if (responseCode == HttpURLConnection.HTTP_OK) {
 				try (BufferedReader br = new BufferedReader(new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
@@ -99,7 +99,7 @@ public class SimulatorThread extends Thread {
 			}
 	
 		} catch (Exception e) {
-			System.err.println("Registration failed for anchor " + anchor.getDeviceId() + ": " + e.getMessage());
+			System.err.println("Registration failed for anchor " + anchor.getDeviceName() + ": " + e.getMessage());
 			return null;
 		}
 	}

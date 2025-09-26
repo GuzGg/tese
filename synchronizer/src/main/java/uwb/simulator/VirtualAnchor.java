@@ -31,7 +31,7 @@ public class VirtualAnchor extends Anchor {
 	    String actionToExecute = response.getString("actionToExecute");
 	    
 	    JSONObject replyPayload = new JSONObject();
-	    replyPayload.put("anchorID", getDeviceId());
+	    replyPayload.put("anchorID", getDeviceName());
 
 	    if ("slowScan".equals(actionToExecute) || "fastScan".equals(actionToExecute)) {
 	        Random random = new Random();
@@ -46,7 +46,7 @@ public class VirtualAnchor extends Anchor {
 	        if(!this.listOfTags.isEmpty()) {
 		        this.listOfTags.forEach(tag -> {
 		            JSONObject tagObj = new JSONObject();
-		            tagObj.put("tagID", tag.getDeviceId());
+		            tagObj.put("tagID", tag.getDeviceName());
 		            tagsArray.put(tagObj);
 		        });
 	        }
@@ -68,14 +68,14 @@ public class VirtualAnchor extends Anchor {
  
 	        JSONArray tagsArray = new JSONArray();
 	        this.listOfTags.forEach(tag -> {
-	            if (executionTimes.containsKey(tag.getDeviceId())) {
+	            if (executionTimes.containsKey(tag.getDeviceName())) {
 	                JSONObject tagObj = new JSONObject();
-	                tagObj.put("tagID", tag.getDeviceId());
+	                tagObj.put("tagID", tag.getDeviceName());
 	                
 	                float distance = random.nextFloat() * 40;
 	                tagObj.put("distance", distance);
 	                
-	                tagObj.put("executedAt", executionTimes.get(tag.getDeviceId()));
+	                tagObj.put("executedAt", executionTimes.get(tag.getDeviceName()));
 	                tagsArray.put(tagObj);
 	            }
 	        });

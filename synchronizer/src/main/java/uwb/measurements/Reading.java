@@ -45,7 +45,7 @@ public class Reading {
 	public JSONObject toJson() {
 		JSONObject json = new JSONObject();
 		
-		json.put("anchorID", this.getAnchor().getDeviceId());
+		json.put("anchorID", this.getAnchor().getDeviceID());
 		json.put("timestamp", this.getTimestamp());
 		json.put("distance", this.getDisctance());
 		json.put("channel", this.getChannel());

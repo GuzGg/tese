@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import uwb.devices.Anchor;
 import uwb.devices.Tag;
 
 public class Measurement {
@@ -65,7 +66,7 @@ public class Measurement {
 		JSONObject json = new JSONObject();
 		
 		json.put("measurementID", this.getMeasurmentId());
-		json.put("targetID", this.getTag().getDeviceId());
+		json.put("targetID", this.getTag().getDeviceID());
 		json.put("timestamp", this.getMeasurmentEndTime());
 		json.put("dataType", "ToA");
 		
@@ -76,5 +77,11 @@ public class Measurement {
 		}
 		
 		return json;
+	}
+
+	public List<Anchor> getAnchors() {
+		List<Anchor> anchors = new ArrayList<Anchor>();
+		this.readings.forEach(reading -> anchors.add(reading.getAnchor()));
+		return  anchors;
 	}
 }
