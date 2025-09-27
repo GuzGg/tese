@@ -149,7 +149,6 @@ public class Sync extends HttpServlet {
         response.setCharacterEncoding("UTF-8");
         String pathInfo = request.getPathInfo();
         
-        // LOGGING PATH INFO
         logger.info("Received POST request on path: " + pathInfo);
 
         if (pathInfo == null || pathInfo.isEmpty()) {
@@ -157,7 +156,6 @@ public class Sync extends HttpServlet {
             return;
         }
 
-        // Reading as FORM PARAMETER
         String jsonString = request.getParameter("jsondata"); 
 
         if (jsonString == null || jsonString.isEmpty()) {
@@ -274,22 +272,10 @@ public class Sync extends HttpServlet {
         if (measurementIsComplete) {
             logger.info("MEASUREMENT ROUND COMPLETE. At least one tag received reports from all " + anchorList.size() + " anchors. Submitting data and resetting state.");
             
-            List<Tag> tagsForOutput = new ArrayList<>();
-            for (Tag tag : tagList) {
-                if (tag != null && !tag.getMeasurements().isEmpty()) {
-                    Measurement completedMeasurement = tag.getMeasurements().getLast();
-                    if (completedMeasurement.getReadings().size() > 0) {
-                        
-                        Tag tagClone = new Tag(tag.getDeviceName(), tag.getinitializedAt(), tag.getLastSeen());
-                        tagClone.setDeviceID(tag.getDeviceID()); // Preserve database ID
-                        tagClone.getMeasurements().add(completedMeasurement);
-                        tagsForOutput.add(tagClone);
-                    }
-                }
-            }
+            // Submits data. startOutputProcess will now check/set the flag.
+            startOutputProcess(tagList); 
             
-            startOutputProcess(tagsForOutput);
-            
+            // Reset the state for the next round
             this.synchronizer.addMeasurementRound(this.actionManager.getActionStartingTime(), this.actionManager.getChannelBusyUntil());
         }
         
@@ -326,27 +312,51 @@ public class Sync extends HttpServlet {
         return this.getResponse(anchor);
     }
     
+    // REFACTORED METHOD TO USE THE 'sentForOutput' FLAG
     private void startOutputProcess(List<Tag> tagList) {
         if (tagList == null || tagList.isEmpty()) {
             return;
         }
 
-        List<Tag> validTags = new ArrayList<>();
+        List<Tag> tagsToSubmit = new ArrayList<>();
+        
+        List<Measurement> measurementsToFlag = new ArrayList<>(); 
+
         for (Tag tag : tagList) {
-            if (tag != null && !tag.getMeasurements().isEmpty() && !tag.getMeasurements().getLast().getReadings().isEmpty()) {
-                validTags.add(tag);
-            } else if (tag != null) {
-                logger.warning("Output process skipped tag " + tag.getDeviceName() + ": Measurement list empty or last measurement has no readings.");
+            if (tag != null && !tag.getMeasurements().isEmpty()) {
+                Measurement measurement = tag.getMeasurements().getLast();
+                
+                if (!measurement.getReadings().isEmpty() && !measurement.getSentForOutput()) { 
+                    
+                    Tag tagClone = new Tag(tag.getDeviceName(), tag.getinitializedAt(), tag.getLastSeen());
+                    tagClone.setDeviceID(tag.getDeviceID());
+                    tagClone.getMeasurements().add(measurement); 
+                    
+                    tagsToSubmit.add(tagClone);
+                    measurementsToFlag.add(measurement);
+                } else if (tag != null && !tag.getMeasurements().isEmpty()) {
+                    if (measurement.getReadings().isEmpty()) {
+                        logger.warning("Output process skipped tag " + tag.getDeviceName() + ": Last measurement has no readings.");
+                    } else {
+                        logger.fine("Output process skipped tag " + tag.getDeviceName() + ": Last measurement already submitted.");
+                    }
+                }
             }
         }
         
-        if (validTags.isEmpty()) {
-            logger.info("Output process skipped: No valid tags with readings found in the batch.");
+        if (tagsToSubmit.isEmpty()) {
+            logger.info("Output process skipped: No new valid tags with readings found in the batch.");
             return;
         }
 
-        this.outputManager.submitTagBatch(validTags);
-        logger.info("Submitted " + validTags.size() + " tag batches to OutputManager for processing.");
+        // Set the flag on the ORIGINAL measurements BEFORE submitting the task.
+        // This immediately marks them as handled to prevent concurrent submission.
+        for (Measurement measurement : measurementsToFlag) {
+            measurement.setSentForOutput(true);
+        }
+
+        this.outputManager.submitTagBatch(tagsToSubmit);
+        logger.info("Submitted " + tagsToSubmit.size() + " tag batches to OutputManager for processing.");
     }
     
     private String getResponse(Anchor anchor) {
@@ -379,6 +389,7 @@ public class Sync extends HttpServlet {
                 
                 if (isStale) {
                     logger.warning("MEASUREMENT ROUND TIMEOUT/STALE. Submitting incomplete data and resetting state.");
+                    // Submits original tag list for stale processing (startOutputProcess handles the flag check)
                     startOutputProcess(new ArrayList<>(this.synchronizer.listOfTags.values()));
                 } else {
                     logger.info("MEASUREMENT ROUND START. Initializing new measurement for tags.");

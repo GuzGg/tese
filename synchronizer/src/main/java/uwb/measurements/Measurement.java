@@ -15,6 +15,7 @@ public class Measurement {
 	private List<Reading> readings;
 	private long measurmentStartTime;
 	private long measurmentEndTime;
+	private boolean sentForOutput = false; 
 	
 	public Measurement (Tag tag, long measurmentStartTime, long measurmentEndTime) {
 		this.tag = tag;
@@ -60,6 +61,14 @@ public class Measurement {
 
 	public void setMeasurmentEndTime(long measurmentEndTime) {
 		this.measurmentEndTime = measurmentEndTime;
+	}
+	
+	public boolean getSentForOutput() {
+	    return sentForOutput;
+	}
+
+	public void setSentForOutput(boolean sentForOutput) {
+	    this.sentForOutput = sentForOutput;
 	}
 	
 	public JSONObject toJson() {
