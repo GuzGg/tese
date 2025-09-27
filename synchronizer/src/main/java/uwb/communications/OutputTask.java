@@ -9,6 +9,7 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
 public class OutputTask implements Runnable {
@@ -24,17 +25,20 @@ public class OutputTask implements Runnable {
 
     @Override
     public void run() {
-        // ASSUMPTION: Tag provides access to its latest measurement.
-        Measurement measurement = tag.getMeasurements().getLast();
+        // Safely access the last measurement
+        if (tag.getMeasurements().isEmpty()) {
+            System.err.println("Error: Tag " + tag.getDeviceName() + " has no measurements to output.");
+            return;
+        }
+        Measurement measurement = tag.getMeasurements().get(tag.getMeasurements().size() - 1);
         int measurementId = -1;
 
-        // --- 1. Database Write (ToA Only) ---
+        // --- 1. Database Persistence ---
         try {
-            // This call is blocking, but it runs on a separate worker thread.
-            measurementId = dbLogger.saveMeasurements(dbLogger.getTargetIdByCode(tag.getDeviceName()), "ToA", measurement.getMeasurmentEndTime()); 
+            System.out.println("OUTPUT: Persisting data for Tag " + tag.getDeviceName());
+            measurementId = dbLogger.saveDataToA(tag, measurement); 
 
             if (measurementId > 0) {
-                // ASSUMPTION: Measurement.setMeasurementId(int) exists
                 measurement.setMeasurmentId(measurementId); 
             } else {
                 System.err.println("Failed to get valid ID for tag: " + tag.getDeviceName());
@@ -46,24 +50,38 @@ public class OutputTask implements Runnable {
             return; 
         }
 
-        // --- 2. HTTP Request ---
+        // --- 2. HTTP Request (Refactored for x-www-form-urlencoded) ---
         try {
+            // 2a. Build the JSON payload
+            JSONObject payloadJson = measurement.toJson(); 
+            String jsonString = payloadJson.toString();
+            
+            // 2b. Encode the JSON string as the 'measurements' parameter
+            // Parameter name must be "measurements"
+            // Content must be URL-encoded
+            String encodedJson = URLEncoder.encode(jsonString, StandardCharsets.UTF_8);
+            String formData = "measurements=" + encodedJson;
+            
+            byte[] postData = formData.getBytes(StandardCharsets.UTF_8);
+
+            // 2c. Setup the Connection
             URL url = new URI(endpointUrl).toURL();
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("POST");
-            connection.setRequestProperty("Content-Type", "application/json");
+            
+            // CRITICAL FIX: Set Content-Type to x-www-form-urlencoded
+            connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+            connection.setRequestProperty("Content-Length", String.valueOf(postData.length));
             connection.setDoOutput(true);
 
-            // Payload now includes the measurementId
-            JSONObject payload = measurement.toJson(); 
-
+            // 2d. Send the Data
             try (OutputStream os = connection.getOutputStream()) {
-                byte[] input = payload.toString().getBytes(StandardCharsets.UTF_8);
-                os.write(input, 0, input.length);
+                os.write(postData);
             }
 
+            // 2e. Process Response
             int code = connection.getResponseCode();
-            System.out.println("Tag: " + tag.getDeviceName() + " | HTTP Response Code: " + code + " by worker " + Thread.currentThread().getName());
+            System.out.println("Tag: " + tag.getDeviceName() + " | Estimator HTTP Response Code: " + code + " by worker " + Thread.currentThread().getName());
 
         } catch (Exception httpException) {
             System.err.println("HTTP Error for tag " + tag.getDeviceName() + ": " + httpException.getMessage());

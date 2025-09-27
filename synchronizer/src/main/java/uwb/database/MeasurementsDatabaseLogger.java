@@ -3,6 +3,8 @@ package uwb.database;
 import uwb.config.Config;
 import uwb.devices.Anchor;
 import uwb.devices.Tag;
+import uwb.measurements.Measurement;
+import uwb.measurements.Reading;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -13,30 +15,34 @@ import java.sql.Statement;
 import java.sql.Types;
 import java.util.List;
 
-import javax.sql.DataSource; 
+import javax.sql.DataSource;
 
 public class MeasurementsDatabaseLogger {
 
-    private final String DB_URL_BASE;
-    private final String DB_NAME;
-    private final String DB_URL;
-    private final String USER;
-    private final String PASSWORD;
+    // Removed redundant fields (DB_URL, DB_NAME)
+    private final String dbUrlBase;
+    private final String dbUrlWithDb; // New field for clarity in initializeDatabase
+    private final String user;
+    private final String password;
 
-    private final DataSource dataSource; 
+    private final DataSource dataSource;
 
     /**
      * Constructor accepts a DataSource (for connection pooling) for thread-safe access.
      */
     public MeasurementsDatabaseLogger(DataSource dataSource, Config config) {
-        this.dataSource = dataSource; 
-        this.DB_URL_BASE = config.getDbUrl();
-        this.DB_NAME = config.getDbName();
-        this.USER = config.getDbUsername();
-        this.PASSWORD = config.getDbPassword();
-        this.DB_URL = this.DB_URL_BASE + "/" + this.DB_NAME;
+        this.dataSource = dataSource;
+        
+        // These fields are needed only for the special case of database creation (initializeDatabase).
+        this.dbUrlBase = config.getDbUrl();
+        this.user = config.getDbUsername();
+        this.password = config.getDbPassword();
+        
+        // Build the full URL here for the table creation step
+        this.dbUrlWithDb = this.dbUrlBase + "/" + config.getDbName();
     }
     
+    // Helper methods (setDoubleOrNull remains the same)
     private void setDoubleOrNull(PreparedStatement stmt, int index, double value) throws SQLException {
         if (value == 0.0) { 
             stmt.setNull(index, Types.DOUBLE);
@@ -46,19 +52,22 @@ public class MeasurementsDatabaseLogger {
     }
 
     /**
-     * Initializes the database and tables if they do not exist. (Uses DriverManager for setup only)
+     * Initializes the database and tables if they do not exist.
+     * Synchronization is necessary only for this one-time setup method.
      */
     public synchronized void initializeDatabase() {
         try {
-            // Create database if it doesn't exist (using DB_URL_BASE)
-            try (Connection conn = DriverManager.getConnection(this.DB_URL_BASE, this.USER, this.PASSWORD);
+            // STEP 1: Create database if it doesn't exist (must use DriverManager and base URL)
+            try (Connection conn = DriverManager.getConnection(this.dbUrlBase, this.user, this.password);
                  Statement stmt = conn.createStatement()) {
-                stmt.executeUpdate("CREATE DATABASE IF NOT EXISTS " + this.DB_NAME);
-                System.out.println("Database ensured: " + this.DB_NAME);
+                
+                String dbName = this.dbUrlWithDb.substring(this.dbUrlWithDb.lastIndexOf('/') + 1);
+                stmt.executeUpdate("CREATE DATABASE IF NOT EXISTS " + dbName);
+                System.out.println("Database ensured: " + dbName);
             }
 
-            // Create tables if they don't exist (using full DB_URL)
-            try (Connection conn = DriverManager.getConnection(this.DB_URL, this.USER, this.PASSWORD);
+            // STEP 2: Create tables if they don't exist (must use DriverManager and full URL, as DataSource might not be ready yet)
+            try (Connection conn = DriverManager.getConnection(this.dbUrlWithDb, this.user, this.password);
                  Statement stmt = conn.createStatement()) {
 
                 // Targets Table
@@ -145,30 +154,32 @@ public class MeasurementsDatabaseLogger {
         }
     }
 
-    public synchronized void saveDataToA(List<Anchor> anchors, Tag target){
+    // --- Data Access Methods (Synchronization REMOVED) ---
+    // The DataSource ensures thread safety via connection pooling. Synchronization here harms throughput.
+
+    public int saveDataToA(Tag target, Measurement measurement){
         long timestamp = System.currentTimeMillis(); 
         int targetID = saveTarget(target);
-        int measurementID = saveMeasurements(targetID,"ToA", timestamp);
+        int measurementID = saveMeasurements(targetID, "ToA", measurement.getMeasurmentEndTime());
+        System.err.println(measurement.getReadings().size());
 
         if (targetID > 0 && measurementID > 0) {
-            List<Integer> anchorIDs = saveAnchorsAndGetIDs(anchors);
-            
-            if (!anchorIDs.isEmpty()) {
-                batchSaveToAreadings(measurementID, timestamp, anchors, anchorIDs);
-            }
+            batchSaveToAreadings(measurementID, timestamp, measurement.getReadings());
         }
+        
+        return measurementID;
     }
 
-    public synchronized int saveTarget(Tag target){
+    public int saveTarget(Tag target){
         final String sql = """
             INSERT INTO Targets (targetCode, targetName) 
             VALUES (?, ?) 
             ON DUPLICATE KEY UPDATE targetName = VALUES(targetName)
             """;
         
-        try (Connection conn = dataSource.getConnection();
+        try (Connection conn = dataSource.getConnection(); // Correctly uses DataSource
              PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-             
+            
             stmt.setString(1, target.getDeviceName());
             stmt.setString(2, target.getDeviceName()); 
             
@@ -195,7 +206,7 @@ public class MeasurementsDatabaseLogger {
             VALUES (?, ?, ?)
             """;
         
-        try (Connection conn = dataSource.getConnection();
+        try (Connection conn = dataSource.getConnection(); // Correctly uses DataSource
              PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             
             stmt.setInt(1, targetID); 
@@ -216,7 +227,7 @@ public class MeasurementsDatabaseLogger {
         return -1; 
     }
     
-    public synchronized int saveAnchor(Anchor anchor) {
+    public int saveAnchor(Anchor anchor) {
         final String sql = """
             INSERT INTO Anchors (anchorCode, anchorName, anchorX, anchorY, anchorZ, anchorAlpha, anchorBeta, anchorGamma) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?) 
@@ -230,7 +241,7 @@ public class MeasurementsDatabaseLogger {
                 anchorGamma = VALUES(anchorGamma)
             """;
         
-        try (Connection conn = dataSource.getConnection();
+        try (Connection conn = dataSource.getConnection(); // Correctly uses DataSource
              PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             
             stmt.setString(1, anchor.getDeviceName());
@@ -260,71 +271,28 @@ public class MeasurementsDatabaseLogger {
         }
     }
 
-    public List<Integer> saveAnchorsAndGetIDs(List<? extends Anchor> anchors){
-        final String sql = """
-            INSERT INTO Anchors (anchorCode, anchorName, anchorX, anchorY, anchorZ, anchorAlpha, anchorBeta, anchorGamma) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?) 
-            ON DUPLICATE KEY UPDATE 
-                anchorName = VALUES(anchorName),
-                anchorX = VALUES(anchorX),
-                anchorY = VALUES(anchorY),
-                anchorZ = VALUES(anchorZ),
-                anchorAlpha = VALUES(anchorAlpha), 
-                anchorBeta = VALUES(anchorBeta), 
-                anchorGamma = VALUES(anchorGamma)
-            """;
-        
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-            
-            for (Anchor anchor : anchors) {
-                stmt.setString(1, anchor.getDeviceName());
-                stmt.setString(2, anchor.getDeviceName()); 
-                
-                setDoubleOrNull(stmt, 3, 0);
-                setDoubleOrNull(stmt, 4, 0);
-                setDoubleOrNull(stmt, 5, 0);
-                setDoubleOrNull(stmt, 6, 0);
-                setDoubleOrNull(stmt, 7, 0);
-                setDoubleOrNull(stmt, 8, 0);
-                stmt.addBatch();
-            }
-
-            stmt.executeBatch();
-            
-            return anchors.stream()
-                         .map(a -> getAnchorIdByCode(a.getDeviceName()))
-                         .toList();
-
-        } catch (SQLException e) {
-            System.err.println("Error saving Anchors: " + e.getMessage());
-            e.printStackTrace();
-            return List.of();
-        }
-    }
-
-    public void batchSaveToAreadings(int measurementId, long timestamp, List<Anchor> anchors, List<Integer> anchorIDs) {
+    public void batchSaveToAreadings(int measurementId, long timestamp, List<Reading> readings) {
+        System.err.println("Save Toa Readings");
+    	
         final String sql = """
             INSERT INTO ToAreadings (measurementID, timestamp, anchorID, `Range`) 
             VALUES (?, ?, ?, ?) 
             """;
         
-        try (Connection conn = dataSource.getConnection();
+        try (Connection conn = dataSource.getConnection(); // Correctly uses DataSource
              PreparedStatement stmt = conn.prepareStatement(sql)) {
-
-            for (int i = 0; i < anchors.size(); i++) {
-                Anchor anchor = anchors.get(i);
-                int anchorID = anchorIDs.get(i);
-                
-                double range = anchor.getRange(); 
-                
+        	
+        	for (Reading reading: readings) {
+        		System.err.println(reading.getAnchor().getDeviceName());
+        		Anchor anchor = reading.getAnchor();
                 stmt.setInt(1, measurementId);
-                stmt.setLong(2, timestamp); 
-                stmt.setInt(3, anchorID);
-                stmt.setDouble(4, range); 
+                stmt.setLong(2, reading.getTimestamp()); 
+                stmt.setInt(3, anchor.getDeviceID());
+                stmt.setDouble(4, reading.getDisctance()); 
                 
                 stmt.addBatch();
-            }
+        	}
+
             stmt.executeBatch();
         } catch (SQLException e) {
             System.err.println("Error batch saving ToA readings: " + e.getMessage());
@@ -334,7 +302,7 @@ public class MeasurementsDatabaseLogger {
 
     public int getTargetIdByCode(String targetCode) {
         final String sql = "SELECT targetID FROM Targets WHERE targetCode = ?";
-        try (Connection conn = dataSource.getConnection();
+        try (Connection conn = dataSource.getConnection(); // Correctly uses DataSource
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, targetCode);
             try (ResultSet rs = stmt.executeQuery()) {
@@ -351,7 +319,7 @@ public class MeasurementsDatabaseLogger {
 
     public int getAnchorIdByCode(String anchorCode) {
         final String sql = "SELECT anchorID FROM Anchors WHERE anchorCode = ?";
-        try (Connection conn = dataSource.getConnection();
+        try (Connection conn = dataSource.getConnection(); // Correctly uses DataSource
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, anchorCode);
             try (ResultSet rs = stmt.executeQuery()) {
@@ -369,7 +337,7 @@ public class MeasurementsDatabaseLogger {
     public void clearTable(String tableName) throws SQLException {
         String query = "DELETE FROM " + tableName;
 
-        try (Connection conn = dataSource.getConnection();
+        try (Connection conn = dataSource.getConnection(); // Correctly uses DataSource
              PreparedStatement stmt = conn.prepareStatement(query)) {
             stmt.executeUpdate();
         }

@@ -7,7 +7,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -24,6 +23,8 @@ public class VirtualAnchor extends Anchor {
 		super(deviceId, initializedAt, lastSeen);
 		this.tagID = 0;
 		this.listOfTags = new ArrayList<Tag>();
+		this.listOfTags.add(new Tag("tag" + tagID, LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()));
+		this.tagID += 1 ;
 	}
 	
 	public JSONObject VirtualBehaviour(JSONObject response) {
@@ -35,7 +36,7 @@ public class VirtualAnchor extends Anchor {
 	    if ("slowScan".equals(actionToExecute) || "fastScan".equals(actionToExecute)) {
 	        Random random = new Random();
 	        
-	        if (random.nextInt(100) < 40) { 
+	        if (random.nextInt(100) < 0) { 
 	            Tag newTag = new Tag("tag" + this.tagID, LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
 	            this.tagID += 1;
 	            this.listOfTags.add(newTag);

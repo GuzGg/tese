@@ -30,7 +30,6 @@ public class OutputThread { // Acts as the Output Manager
      */
     public void submitTagBatch(List<Tag> tags) {
         for (Tag tag : tags) {
-            // Each tag's measurement processing is submitted as a separate task
             executorService.submit(new OutputTask(tag, endpointUrl, dbLogger));
         }
     }
@@ -43,14 +42,13 @@ public class OutputThread { // Acts as the Output Manager
         System.out.println("Shutting down output thread pool...");
         executorService.shutdown();
         try {
-            // Wait up to 30 seconds for current tasks to finish
             if (!executorService.awaitTermination(30, TimeUnit.SECONDS)) {
-                executorService.shutdownNow(); // Force shutdown if wait limit is hit
+                executorService.shutdownNow();
                 System.err.println("Output pool did not shut down cleanly. Some tasks were aborted.");
             }
         } catch (InterruptedException e) {
             executorService.shutdownNow();
-            Thread.currentThread().interrupt(); // Restore interrupt status
+            Thread.currentThread().interrupt();
         }
     }
 }

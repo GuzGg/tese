@@ -108,11 +108,9 @@ public class SimulatorThread extends Thread {
 		HttpURLConnection connection = (HttpURLConnection) url.openConnection();
 		connection.setRequestMethod("POST");
 		
-		// Change Content-Type to x-www-form-urlencoded
 		connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
 		connection.setDoOutput(true);
 		
-		// Build the payload as a URL-encoded string with a key 'jsondata'
 		String encodedPayload = "jsondata=" + URLEncoder.encode(reply.toString(), StandardCharsets.UTF_8.toString());
 		
 		try (OutputStream os = connection.getOutputStream()) {

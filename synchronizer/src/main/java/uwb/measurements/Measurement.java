@@ -24,7 +24,7 @@ public class Measurement {
 	}
 	
 	public boolean checkIfValid(long timestamp) {
-		return timestamp > this.measurmentStartTime && timestamp < this.measurmentStartTime;
+		return timestamp >= this.measurmentStartTime && timestamp <= this.measurmentEndTime;
 	}
 	
 	public long getMeasurmentId() {

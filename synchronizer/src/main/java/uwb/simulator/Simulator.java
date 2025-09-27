@@ -37,7 +37,7 @@ public class Simulator {
 	
 	public static void main(String[] args) {
 		String defaultUrl = "http://localhost:8080";
-		int defaultAnchors = 3;
+		int defaultAnchors = 4;
 		
 		String url = args.length > 0 ? args[0] : defaultUrl;
 		int numberOfAnchors = args.length > 1 ? Integer.parseInt(args[1]) : defaultAnchors;
