@@ -57,7 +57,6 @@ public class MeasurementsDatabaseLogger {
      */
     public synchronized void initializeDatabase() {
         try {
-            // STEP 1: Create database if it doesn't exist (must use DriverManager and base URL)
             try (Connection conn = DriverManager.getConnection(this.dbUrlBase, this.user, this.password);
                  Statement stmt = conn.createStatement()) {
                 
@@ -66,7 +65,6 @@ public class MeasurementsDatabaseLogger {
                 System.out.println("Database ensured: " + dbName);
             }
 
-            // STEP 2: Create tables if they don't exist (must use DriverManager and full URL, as DataSource might not be ready yet)
             try (Connection conn = DriverManager.getConnection(this.dbUrlWithDb, this.user, this.password);
                  Statement stmt = conn.createStatement()) {
 
@@ -161,10 +159,9 @@ public class MeasurementsDatabaseLogger {
         long timestamp = System.currentTimeMillis(); 
         int targetID = saveTarget(target);
         int measurementID = saveMeasurements(targetID, "ToA", measurement.getMeasurmentEndTime());
-        System.err.println(measurement.getReadings().size());
 
         if (targetID > 0 && measurementID > 0) {
-            batchSaveToAreadings(measurementID, timestamp, measurement.getReadings());
+            saveToAreadings(measurementID, timestamp, measurement.getReadings());
         }
         
         return measurementID;
@@ -271,9 +268,7 @@ public class MeasurementsDatabaseLogger {
         }
     }
 
-    public void batchSaveToAreadings(int measurementId, long timestamp, List<Reading> readings) {
-        System.err.println("Save Toa Readings");
-    	
+    public void saveToAreadings(int measurementId, long timestamp, List<Reading> readings) {    	
         final String sql = """
             INSERT INTO ToAreadings (measurementID, timestamp, anchorID, `Range`) 
             VALUES (?, ?, ?, ?) 
@@ -283,7 +278,6 @@ public class MeasurementsDatabaseLogger {
              PreparedStatement stmt = conn.prepareStatement(sql)) {
         	
         	for (Reading reading: readings) {
-        		System.err.println(reading.getAnchor().getDeviceName());
         		Anchor anchor = reading.getAnchor();
                 stmt.setInt(1, measurementId);
                 stmt.setLong(2, reading.getTimestamp()); 
@@ -295,7 +289,7 @@ public class MeasurementsDatabaseLogger {
 
             stmt.executeBatch();
         } catch (SQLException e) {
-            System.err.println("Error batch saving ToA readings: " + e.getMessage());
+            System.err.println("Error saving ToA readings: " + e.getMessage());
             e.printStackTrace();
         }
     }

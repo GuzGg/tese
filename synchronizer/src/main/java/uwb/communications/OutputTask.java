@@ -16,11 +16,15 @@ public class OutputTask implements Runnable {
     private final Tag tag;
     private final String endpointUrl;
     private final MeasurementsDatabaseLogger dbLogger;
+    private final boolean exportToDbQ;
+    private final boolean exportToPeQ;
 
-    public OutputTask(Tag tag, String endpointUrl, MeasurementsDatabaseLogger dbLogger) {
+    public OutputTask(Tag tag, String endpointUrl, MeasurementsDatabaseLogger dbLogger, boolean exportToDbQ, boolean exportToPeQ) {
         this.tag = tag;
         this.endpointUrl = endpointUrl;
         this.dbLogger = dbLogger;
+        this.exportToDbQ = exportToDbQ;
+        this.exportToPeQ = exportToPeQ;
     }
 
     @Override
@@ -31,50 +35,55 @@ public class OutputTask implements Runnable {
         }
         Measurement measurement = tag.getMeasurements().get(tag.getMeasurements().size() - 1);
         int measurementId = -1;
+        
+        if(this.exportToDbQ) {
+            try {
+                System.out.println("OUTPUT: Persisting data for Tag " + tag.getDeviceName());
+                measurementId = dbLogger.saveDataToA(tag, measurement); 
 
-        try {
-            System.out.println("OUTPUT: Persisting data for Tag " + tag.getDeviceName());
-            measurementId = dbLogger.saveDataToA(tag, measurement); 
-
-            if (measurementId > 0) {
-                measurement.setMeasurmentId(measurementId); 
-            } else {
-                System.err.println("Failed to get valid ID for tag: " + tag.getDeviceName());
+                if (measurementId > 0) {
+                    measurement.setMeasurmentId(measurementId); 
+                } else {
+                    System.err.println("Failed to get valid ID for tag: " + tag.getDeviceName());
+                    return; 
+                }
+            } catch (Exception dbException) {
+                System.err.println("DB Error for tag " + tag.getDeviceName() + ": " + dbException.getMessage());
+                dbException.printStackTrace();
                 return; 
             }
-        } catch (Exception dbException) {
-            System.err.println("DB Error for tag " + tag.getDeviceName() + ": " + dbException.getMessage());
-            dbException.printStackTrace();
-            return; 
         }
 
-        try {
-            JSONObject payloadJson = measurement.toJson(); 
-            String jsonString = payloadJson.toString();
-            
-            String encodedJson = URLEncoder.encode(jsonString, StandardCharsets.UTF_8);
-            String formData = "measurements=" + encodedJson;
-            
-            byte[] postData = formData.getBytes(StandardCharsets.UTF_8);
+        if(this.exportToPeQ) {
+            try {
+                JSONObject payloadJson = measurement.toJson(); 
+                String jsonString = payloadJson.toString();
+                
+                String encodedJson = URLEncoder.encode(jsonString, StandardCharsets.UTF_8);
+                String formData = "measurements=" + encodedJson;
+                
+                byte[] postData = formData.getBytes(StandardCharsets.UTF_8);
 
-            URL url = new URI(endpointUrl).toURL();
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("POST");
-            
-            connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
-            connection.setRequestProperty("Content-Length", String.valueOf(postData.length));
-            connection.setDoOutput(true);
+                URL url = new URI(endpointUrl).toURL();
+                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("POST");
+                
+                connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+                connection.setRequestProperty("Content-Length", String.valueOf(postData.length));
+                connection.setDoOutput(true);
 
-            try (OutputStream os = connection.getOutputStream()) {
-                os.write(postData);
+                try (OutputStream os = connection.getOutputStream()) {
+                    os.write(postData);
+                }
+
+    	            int code = connection.getResponseCode();
+                System.out.println("Tag: " + tag.getDeviceName() + " | Estimator HTTP Response Code: " + code + " by worker " + Thread.currentThread().getName());
+
+            } catch (Exception httpException) {
+                System.err.println("HTTP Error for tag " + tag.getDeviceName() + ": " + httpException.getMessage());
+                httpException.printStackTrace();
             }
-
-	            int code = connection.getResponseCode();
-            System.out.println("Tag: " + tag.getDeviceName() + " | Estimator HTTP Response Code: " + code + " by worker " + Thread.currentThread().getName());
-
-        } catch (Exception httpException) {
-            System.err.println("HTTP Error for tag " + tag.getDeviceName() + ": " + httpException.getMessage());
-            httpException.printStackTrace();
         }
+
     }
 }

@@ -17,10 +17,14 @@ public class OutputThread { // Acts as the Output Manager
     private final ExecutorService executorService = Executors.newFixedThreadPool(POOL_SIZE);
     private final String endpointUrl;
     private final MeasurementsDatabaseLogger dbLogger;
+    private final boolean exportToDbQ;
+    private final boolean exportToPeQ;
 
-    public OutputThread(String endpointUrl, MeasurementsDatabaseLogger dbLogger) {
+    public OutputThread(String endpointUrl, MeasurementsDatabaseLogger dbLogger, boolean exportToDbQ, boolean exportToPeQ) {
         this.endpointUrl = endpointUrl;
         this.dbLogger = dbLogger;
+        this.exportToDbQ = exportToDbQ;
+        this.exportToPeQ = exportToPeQ;
         System.out.println("Initialized Output Thread Pool with " + POOL_SIZE + " workers.");
     }
     
@@ -30,7 +34,7 @@ public class OutputThread { // Acts as the Output Manager
      */
     public void submitTagBatch(List<Tag> tags) {
         for (Tag tag : tags) {
-            executorService.submit(new OutputTask(tag, endpointUrl, dbLogger));
+            executorService.submit(new OutputTask(tag, endpointUrl, dbLogger, this.exportToDbQ, this.exportToPeQ));
         }
     }
 
