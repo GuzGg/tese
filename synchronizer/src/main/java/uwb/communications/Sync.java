@@ -37,7 +37,7 @@ import uwb.measurements.Measurement;
 import uwb.measurements.Reading;
 import uwb.managers.ActionManager.Action;
 
-@WebServlet(urlPatterns = "/Synchronizer/*", loadOnStartup = 1) 
+@WebServlet(urlPatterns = "/C03a/*", loadOnStartup = 1) 
 public class Sync extends HttpServlet {
     private static final long serialVersionUID = 1L;
     
@@ -73,7 +73,7 @@ public class Sync extends HttpServlet {
         }
         
         Properties props = new Properties();
-        try (InputStream input = getClass().getClassLoader().getResourceAsStream("config.properties")) {
+        try (InputStream input = servletConfig.getServletContext().getResourceAsStream("/WEB-INF/config.properties")) {
             if (input == null) {
                 logger.severe("config.properties file not found.");
                 throw new ServletException("config.properties file not found.");
@@ -120,7 +120,6 @@ public class Sync extends HttpServlet {
 
         try {
             this.dbLogger = new MeasurementsDatabaseLogger(dataSource, this.config); 
-            this.dbLogger.initializeDatabase(); 
             
             // The output manager is configured using peUrl from config.properties
             this.outputManager = new OutputThread(this.config.getPeUrl(), this.dbLogger, config.isExportToDbQ(), config.isExportToPeQ());
