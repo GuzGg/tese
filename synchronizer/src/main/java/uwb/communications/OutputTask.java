@@ -18,13 +18,15 @@ public class OutputTask implements Runnable {
     private final MeasurementsDatabaseLogger dbLogger;
     private final boolean exportToDbQ;
     private final boolean exportToPeQ;
+    private final String token;
 
-    public OutputTask(Tag tag, String endpointUrl, MeasurementsDatabaseLogger dbLogger, boolean exportToDbQ, boolean exportToPeQ) {
+    public OutputTask(Tag tag, String endpointUrl, MeasurementsDatabaseLogger dbLogger, boolean exportToDbQ, boolean exportToPeQ, String token) {
         this.tag = tag;
         this.endpointUrl = endpointUrl;
         this.dbLogger = dbLogger;
         this.exportToDbQ = exportToDbQ;
         this.exportToPeQ = exportToPeQ;
+        this.token = token;
     }
 
     @Override
@@ -56,7 +58,8 @@ public class OutputTask implements Runnable {
 
         if(this.exportToPeQ) {
             try {
-                JSONObject payloadJson = measurement.toJson(); 
+                JSONObject payloadJson = measurement.toJson();
+                payloadJson.append("accessToken " , this.token);
                 String jsonString = payloadJson.toString();
                 
                 String encodedJson = URLEncoder.encode(jsonString, StandardCharsets.UTF_8);

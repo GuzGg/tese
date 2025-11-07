@@ -8,10 +8,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-public class OutputThread { // Acts as the Output Manager
+public class OutputThread {
 
-    // Determine pool size based on the I/O-bound nature of the task
-    // Using 8x available processors as a robust starting point for I/O tasks.
     private static final int POOL_SIZE = Runtime.getRuntime().availableProcessors() * 8;
     
     private final ExecutorService executorService = Executors.newFixedThreadPool(POOL_SIZE);
@@ -19,29 +17,24 @@ public class OutputThread { // Acts as the Output Manager
     private final MeasurementsDatabaseLogger dbLogger;
     private final boolean exportToDbQ;
     private final boolean exportToPeQ;
+    private final String token;
 
-    public OutputThread(String endpointUrl, MeasurementsDatabaseLogger dbLogger, boolean exportToDbQ, boolean exportToPeQ) {
+    public OutputThread(String endpointUrl, MeasurementsDatabaseLogger dbLogger, boolean exportToDbQ, boolean exportToPeQ, String token) {
         this.endpointUrl = endpointUrl;
         this.dbLogger = dbLogger;
         this.exportToDbQ = exportToDbQ;
         this.exportToPeQ = exportToPeQ;
+        this.token = token;
         System.out.println("Initialized Output Thread Pool with " + POOL_SIZE + " workers.");
     }
     
-    /**
-     * Submits a batch of tag measurements to the executor service.
-     * This method is fast and non-blocking.
-     */
     public void submitTagBatch(List<Tag> tags) {
         for (Tag tag : tags) {
-            executorService.submit(new OutputTask(tag, endpointUrl, dbLogger, this.exportToDbQ, this.exportToPeQ));
+            executorService.submit(new OutputTask(tag, endpointUrl, dbLogger, this.exportToDbQ, this.exportToPeQ, token));
         }
     }
 
-    /**
-     * Gracefully shuts down the thread pool, ensuring all submitted tasks are completed.
-     * Should be called from the servlet's destroy() method.
-     */
+
     public void shutdown() {
         System.out.println("Shutting down output thread pool...");
         executorService.shutdown();

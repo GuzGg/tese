@@ -22,6 +22,7 @@ public class Config {
 
     // Position Estimator
     private final String peUrl;
+    private final String peToken;
 
     public Config(Properties props) {
         // Database
@@ -42,6 +43,7 @@ public class Config {
 
         // Position Estimator
         this.peUrl = props.getProperty("pe.url");
+        this.peToken = props.getProperty("pe.token");
     }
 
     // Public getters for all properties
@@ -56,4 +58,5 @@ public class Config {
     public boolean isExportToDbQ() { return exportToDbQ; }
     public boolean isExportToPeQ() { return exportToPeQ; }
     public String getPeUrl() { return peUrl; }
+    public String getPeToken() {return peToken;}
 }

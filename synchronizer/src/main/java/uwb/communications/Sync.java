@@ -122,7 +122,7 @@ public class Sync extends HttpServlet {
             this.dbLogger = new MeasurementsDatabaseLogger(dataSource, this.config); 
             
             // The output manager is configured using peUrl from config.properties
-            this.outputManager = new OutputThread(this.config.getPeUrl(), this.dbLogger, config.isExportToDbQ(), config.isExportToPeQ());
+            this.outputManager = new OutputThread(this.config.getPeUrl(), this.dbLogger, config.isExportToDbQ(), config.isExportToPeQ(), config.getPeToken());
             logger.info("Database and Output Manager initialized successfully.");
             
         } catch (Exception e) {

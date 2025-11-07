@@ -73,7 +73,7 @@ public class Measurement {
 	
 	public JSONObject toJson() {
 		JSONObject json = new JSONObject();
-		
+
 		json.put("measurementID", this.getMeasurmentId());
 		json.put("targetID", this.getTag().getDeviceID());
 		json.put("timestamp", this.getMeasurmentEndTime());
