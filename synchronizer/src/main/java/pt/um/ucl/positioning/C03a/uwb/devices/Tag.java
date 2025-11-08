@@ -1,9 +1,9 @@
-package uwb.devices;
+package pt.um.ucl.positioning.C03a.uwb.devices;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import uwb.measurements.Measurement;
+import pt.um.ucl.positioning.C03a.uwb.measurements.Measurement;
 
 public class Tag extends Device {
 	

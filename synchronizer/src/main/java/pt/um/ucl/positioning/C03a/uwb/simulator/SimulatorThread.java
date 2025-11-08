@@ -1,4 +1,4 @@
-package uwb.simulator;
+package pt.um.ucl.positioning.C03a.uwb.simulator;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;

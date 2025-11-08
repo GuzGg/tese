@@ -1,4 +1,4 @@
-package uwb.simulator;
+package pt.um.ucl.positioning.C03a.uwb.simulator;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -11,8 +11,8 @@ import java.util.Random;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import uwb.devices.Anchor;
-import uwb.devices.Tag;
+import pt.um.ucl.positioning.C03a.uwb.devices.Anchor;
+import pt.um.ucl.positioning.C03a.uwb.devices.Tag;
 
 public class VirtualAnchor extends Anchor {
 	private List<Tag> listOfTags;

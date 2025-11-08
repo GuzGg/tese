@@ -1,4 +1,4 @@
-package uwb.config;
+package pt.um.ucl.positioning.C03a.uwb.config;
 
 import java.util.Properties;
 

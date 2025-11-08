@@ -1,4 +1,4 @@
-package uwb.simulator;
+package pt.um.ucl.positioning.C03a.uwb.simulator;
 
 import java.util.ArrayList;
 import java.util.List;

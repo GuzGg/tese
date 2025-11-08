@@ -1,5 +1,6 @@
-package uwb.communications;
+package pt.um.ucl.positioning.C03a.uwb.communications;
 
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintWriter;
@@ -12,7 +13,8 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
-import java.util.logging.Logger; 
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import java.util.logging.Level;
 
 import jakarta.servlet.ServletConfig;
@@ -27,21 +29,20 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import uwb.config.Config;
-import uwb.database.MeasurementsDatabaseLogger; 
-import uwb.devices.Anchor;
-import uwb.devices.Tag;
-import uwb.managers.ActionManager;
-import uwb.managers.Synchronizer;
-import uwb.measurements.Measurement;
-import uwb.measurements.Reading;
-import uwb.managers.ActionManager.Action;
+import pt.um.ucl.positioning.C03a.uwb.config.Config;
+import pt.um.ucl.positioning.C03a.uwb.database.MeasurementsDatabaseLogger; 
+import pt.um.ucl.positioning.C03a.uwb.devices.Anchor;
+import pt.um.ucl.positioning.C03a.uwb.devices.Tag;
+import pt.um.ucl.positioning.C03a.uwb.managers.ActionManager;
+import pt.um.ucl.positioning.C03a.uwb.managers.Synchronizer;
+import pt.um.ucl.positioning.C03a.uwb.measurements.Measurement;
+import pt.um.ucl.positioning.C03a.uwb.measurements.Reading;
+import pt.um.ucl.positioning.C03a.uwb.managers.ActionManager.Action;
 
-@WebServlet(urlPatterns = "/C03a/*", loadOnStartup = 1) 
-public class Sync extends HttpServlet {
+public class C03a extends HttpServlet {
     private static final long serialVersionUID = 1L;
     
-    private static final Logger logger = Logger.getLogger(Sync.class.getName());
+    private static final Logger logger = Logger.getLogger(C03a.class.getName());
 
     private static final String PATH_BOOT = "/anchorRegistration";
     private static final String PATH_MEASURE = "/measurementReport";
@@ -56,7 +57,7 @@ public class Sync extends HttpServlet {
     private OutputThread outputManager;         
     private Config config;
 
-    public Sync() {
+    public C03a() {
         super();
     }
 
@@ -93,14 +94,11 @@ public class Sync extends HttpServlet {
             this.config.getAmScanInterval(),
             this.config.getAmScanTime()
         );
-        
-        // --- DATA SOURCE SETUP (CRITICAL FOR STABILITY) ---
-        
+                
         final String dbUrl = this.config.getDbUrl() + "/" + this.config.getDbName();
         final String user = this.config.getDbUsername();
         final String password = this.config.getDbPassword();
 
-        // Anonymous Inner Class implementation of DataSource to safely get connections
         DataSource dataSource = new DataSource() {
             @Override
             public Connection getConnection() throws SQLException {
@@ -137,7 +135,7 @@ public class Sync extends HttpServlet {
     public void destroy() {
         if (this.outputManager != null) {
             this.outputManager.shutdown();
-            logger.info("OutputManager shut down.");
+            logger.info("OutputManager shutdown.");
         }
         super.destroy();
     }
@@ -155,23 +153,23 @@ public class Sync extends HttpServlet {
             return;
         }
 
-        String jsonString = request.getParameter("jsondata"); 
-
-        if (jsonString == null || jsonString.isEmpty()) {
-            sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing 'jsondata' parameter in the form data.");
+        String jsonString;
+        try (BufferedReader reader = request.getReader()) {
+            jsonString = reader.lines().collect(Collectors.joining());
+        } catch (IOException e) {
+            logger.warning("Error reading request body: " + e.getMessage());
+            sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Error reading request body.");
+            return;
+        }
+        String trimmedJson = jsonString.trim();
+        if (trimmedJson.isEmpty()) {
+            sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing or empty JSON request body.");
             return;
         }
 
         String responseString = null;
 
         try {
-            String trimmedJson = jsonString.trim();
-            
-            if (trimmedJson.isEmpty()) {
-                sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "JSON payload contained only whitespace.");
-                return;
-            }
-
             JSONObject jsonObj = new JSONObject(trimmedJson); 
 
             if (PATH_BOOT.equals(pathInfo)) {
@@ -271,10 +269,8 @@ public class Sync extends HttpServlet {
         if (measurementIsComplete) {
             logger.info("MEASUREMENT ROUND COMPLETE. At least one tag received reports from all " + anchorList.size() + " anchors. Submitting data and resetting state.");
             
-            // Submits data. startOutputProcess will now check/set the flag.
             startOutputProcess(tagList); 
             
-            // Reset the state for the next round
             this.synchronizer.addMeasurementRound(this.actionManager.getActionStartingTime(), this.actionManager.getChannelBusyUntil());
         }
         
@@ -311,7 +307,6 @@ public class Sync extends HttpServlet {
         return this.getResponse(anchor);
     }
     
-    // REFACTORED METHOD TO USE THE 'sentForOutput' FLAG
     private void startOutputProcess(List<Tag> tagList) {
         if (tagList == null || tagList.isEmpty()) {
             return;
@@ -348,8 +343,6 @@ public class Sync extends HttpServlet {
             return;
         }
 
-        // Set the flag on the ORIGINAL measurements BEFORE submitting the task.
-        // This immediately marks them as handled to prevent concurrent submission.
         for (Measurement measurement : measurementsToFlag) {
             measurement.setSentForOutput(true);
         }
@@ -369,7 +362,6 @@ public class Sync extends HttpServlet {
         } else if (action == Action.FAST_SCAN) {
             response = this.synchronizer.getFastScanResponse(this.actionManager.getFastScanTime());
         } else {
-            // Action is MEASUREMENT
             response = this.synchronizer.getMeasurmentResponse(anchor, this.actionManager.getMeasurmentTime(this.synchronizer.listOfAnchors.size(), this.synchronizer.listOfTags.size()), this.actionManager.getScanTime());
             
             long now = LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
@@ -388,7 +380,6 @@ public class Sync extends HttpServlet {
                 
                 if (isStale) {
                     logger.warning("MEASUREMENT ROUND TIMEOUT/STALE. Submitting incomplete data and resetting state.");
-                    // Submits original tag list for stale processing (startOutputProcess handles the flag check)
                     startOutputProcess(new ArrayList<>(this.synchronizer.listOfTags.values()));
                 } else {
                     logger.info("MEASUREMENT ROUND START. Initializing new measurement for tags.");

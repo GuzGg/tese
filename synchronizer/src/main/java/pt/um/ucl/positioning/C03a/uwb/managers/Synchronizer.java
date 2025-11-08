@@ -1,13 +1,13 @@
-package uwb.managers;
+package pt.um.ucl.positioning.C03a.uwb.managers;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import uwb.devices.Anchor;
-import uwb.devices.Tag;
-import uwb.measurements.Measurement;
+import pt.um.ucl.positioning.C03a.uwb.devices.Anchor;
+import pt.um.ucl.positioning.C03a.uwb.devices.Tag;
+import pt.um.ucl.positioning.C03a.uwb.measurements.Measurement;
 
 import org.json.JSONArray;
 import org.json.JSONException;

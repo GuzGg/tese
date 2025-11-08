@@ -1,4 +1,4 @@
-package uwb.measurements;
+package pt.um.ucl.positioning.C03a.uwb.measurements;
 
 import java.util.List;
 import java.util.ArrayList;
@@ -6,8 +6,8 @@ import java.util.ArrayList;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import uwb.devices.Anchor;
-import uwb.devices.Tag;
+import pt.um.ucl.positioning.C03a.uwb.devices.Anchor;
+import pt.um.ucl.positioning.C03a.uwb.devices.Tag;
 
 public class Measurement {
 	private Tag tag;

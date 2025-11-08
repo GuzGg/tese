@@ -1,10 +1,10 @@
-package uwb.database;
+package pt.um.ucl.positioning.C03a.uwb.database;
 
-import uwb.config.Config;
-import uwb.devices.Anchor;
-import uwb.devices.Tag;
-import uwb.measurements.Measurement;
-import uwb.measurements.Reading;
+import pt.um.ucl.positioning.C03a.uwb.config.Config;
+import pt.um.ucl.positioning.C03a.uwb.devices.Anchor;
+import pt.um.ucl.positioning.C03a.uwb.devices.Tag;
+import pt.um.ucl.positioning.C03a.uwb.measurements.Measurement;
+import pt.um.ucl.positioning.C03a.uwb.measurements.Reading;
 
 import java.sql.Connection;
 import java.sql.DriverManager;

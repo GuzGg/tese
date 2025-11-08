@@ -1,8 +1,8 @@
-package uwb.measurements;
+package pt.um.ucl.positioning.C03a.uwb.measurements;
 
 import org.json.JSONObject;
 
-import uwb.devices.Anchor;
+import pt.um.ucl.positioning.C03a.uwb.devices.Anchor;
 
 public class Reading {
 	private Anchor anchor;

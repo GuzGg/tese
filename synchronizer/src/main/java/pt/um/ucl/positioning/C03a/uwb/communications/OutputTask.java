@@ -1,15 +1,14 @@
-package uwb.communications;
+package pt.um.ucl.positioning.C03a.uwb.communications;
 
-import uwb.devices.Tag;
-import uwb.measurements.Measurement;
-import uwb.database.MeasurementsDatabaseLogger;
+import pt.um.ucl.positioning.C03a.uwb.devices.Tag;
+import pt.um.ucl.positioning.C03a.uwb.measurements.Measurement;
+import pt.um.ucl.positioning.C03a.uwb.database.MeasurementsDatabaseLogger;
 import org.json.JSONObject;
 
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
 public class OutputTask implements Runnable {
@@ -59,19 +58,16 @@ public class OutputTask implements Runnable {
         if(this.exportToPeQ) {
             try {
                 JSONObject payloadJson = measurement.toJson();
-                payloadJson.append("accessToken " , this.token);
+                payloadJson.put("accessToken" , this.token);
                 String jsonString = payloadJson.toString();
                 
-                String encodedJson = URLEncoder.encode(jsonString, StandardCharsets.UTF_8);
-                String formData = "measurements=" + encodedJson;
-                
-                byte[] postData = formData.getBytes(StandardCharsets.UTF_8);
+                byte[] postData = jsonString.getBytes(StandardCharsets.UTF_8);
 
                 URL url = new URI(endpointUrl).toURL();
                 HttpURLConnection connection = (HttpURLConnection) url.openConnection();
                 connection.setRequestMethod("POST");
                 
-                connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+                connection.setRequestProperty("Content-Type", "application/json");
                 connection.setRequestProperty("Content-Length", String.valueOf(postData.length));
                 connection.setDoOutput(true);
 

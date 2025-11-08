@@ -1,7 +1,7 @@
-package uwb.communications;
+package pt.um.ucl.positioning.C03a.uwb.communications;
 
-import uwb.devices.Tag;
-import uwb.database.MeasurementsDatabaseLogger;
+import pt.um.ucl.positioning.C03a.uwb.devices.Tag;
+import pt.um.ucl.positioning.C03a.uwb.database.MeasurementsDatabaseLogger;
 
 import java.util.List;
 import java.util.concurrent.ExecutorService;
