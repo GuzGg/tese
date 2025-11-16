@@ -10,6 +10,7 @@ import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException; 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
@@ -55,6 +56,9 @@ import pt.um.ucl.positioning.C03a.uwb.managers.ActionManager.Action;
  * <li>{@code /scanReport}: For anchors to report discovered tags.</li>
  * <li>{@code /measurementReport}: For anchors to submit distance measurements to tags.</li>
  * </ul>
+ * 
+ * @author Gustavo Oliveira
+ * @version 0.1
  */
 public class C03a extends HttpServlet {
     private static final long serialVersionUID = 1L;
@@ -80,6 +84,10 @@ public class C03a extends HttpServlet {
     private OutputThread outputManager;         
     /** Holds all loaded application configuration properties. */
     private Config config;
+    /** Current verion number */
+    private String version = "0.1";
+    /** Initialization time */
+    private LocalDateTime startupTime;
 
     /**
      * Default constructor.
@@ -101,7 +109,7 @@ public class C03a extends HttpServlet {
     public void init(ServletConfig servletConfig) throws ServletException {
         super.init(servletConfig);
         logger.info("Sync Servlet initializing...");
-        
+        this.startupTime = LocalDateTime.now();
         // Load MariaDB JDBC Driver
         try {
             Class.forName("org.mariadb.jdbc.Driver");
@@ -206,7 +214,10 @@ public class C03a extends HttpServlet {
         
         System.out.println(request.getPathInfo());
         if(pathInfo.equals("/status")) {
-            response.getWriter().println("C03a is running");
+        	DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+            // Format the current date and time
+            String formattedStartupTime = startupTime.format(formatter);
+            response.getWriter().println("C03a, version "+version+", is running since "+formattedStartupTime);
             response.getWriter().close();
 
         } else {
