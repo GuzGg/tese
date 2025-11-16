@@ -17,32 +17,56 @@ import java.util.List;
 
 import javax.sql.DataSource;
 
+/**
+ * Handles all database logging operations for UWB measurements.
+ * <p>
+ * This class is responsible for saving {@link Tag}s, {@link Anchor}s,
+ * {@link Measurement}s, and {@link Reading}s to a relational database.
+ * It uses a {@link DataSource} for managing database connections,
+ * ensuring thread-safe and efficient database access.
+ * 
+ * @author Gustavo Oliveira
+ * @version 0.1
+ */
 public class MeasurementsDatabaseLogger {
 
-    // Removed redundant fields (DB_URL, DB_NAME)
+    /** The base JDBC URL (e.g., "jdbc:mysql://localhost:3306"). */
     private final String dbUrlBase;
-    private final String dbUrlWithDb; // New field for clarity in initializeDatabase
+    /** The full JDBC URL including the database name (e.g., "jdbc:mysql://localhost:3306/uwb_db"). */
+    private final String dbUrlWithDb;
+    /** The database username. */
     private final String user;
+    /** The database password. */
     private final String password;
 
+    /** The connection pool manager. */
     private final DataSource dataSource;
 
     /**
-     * Constructor accepts a DataSource (for connection pooling) for thread-safe access.
+     * Constructs a new database logger.
+     *
+     * @param dataSource The {@link DataSource} to use for connection pooling.
+     * @param config The {@link Config} object containing database credentials and URLs.
      */
     public MeasurementsDatabaseLogger(DataSource dataSource, Config config) {
         this.dataSource = dataSource;
         
-        // These fields are needed only for the special case of database creation (initializeDatabase).
         this.dbUrlBase = config.getDbUrl();
         this.user = config.getDbUsername();
         this.password = config.getDbPassword();
         
-        // Build the full URL here for the table creation step
         this.dbUrlWithDb = this.dbUrlBase + "/" + config.getDbName();
     }
     
-    // Helper methods (setDoubleOrNull remains the same)
+    /**
+     * A helper method to set a PreparedStatement parameter to {@link Types#DOUBLE}
+     * or {@link Types#NULL} if the value is 0.0.
+     *
+     * @param stmt The PreparedStatement.
+     * @param index The parameter index.
+     * @param value The double value to set.
+     * @throws SQLException if a database access error occurs.
+     */
     private void setDoubleOrNull(PreparedStatement stmt, int index, double value) throws SQLException {
         if (value == 0.0) { 
             stmt.setNull(index, Types.DOUBLE);
@@ -54,6 +78,13 @@ public class MeasurementsDatabaseLogger {
     // --- Data Access Methods (Synchronization REMOVED) ---
     // The DataSource ensures thread safety via connection pooling. Synchronization here harms throughput.
 
+    /**
+     * Saves a complete measurement (Target, Measurement, and Readings) to the database.
+     *
+     * @param target The {@link Tag} to which the measurement pertains.
+     * @param measurement The {@link Measurement} object containing all readings.
+     * @return The auto-generated ID of the new measurement record, or -1 if an error occurred.
+     */
     public int saveDataToA(Tag target, Measurement measurement){
         long timestamp = System.currentTimeMillis(); 
         int targetID = saveTarget(target);
@@ -66,6 +97,13 @@ public class MeasurementsDatabaseLogger {
         return measurementID;
     }
 
+    /**
+     * Saves a {@link Tag} (Target) to the database.
+     * If the tag already exists (by targetCode), it updates the name.
+     *
+     * @param target The {@link Tag} to save.
+     * @return The auto-generated ID of the tag, or the existing ID. Returns -1 on failure.
+     */
     public int saveTarget(Tag target){
         final String sql = """
             INSERT INTO Targets (targetCode, targetName) 
@@ -96,6 +134,14 @@ public class MeasurementsDatabaseLogger {
         }
     }
 
+    /**
+     * Saves a new Measurement metadata record.
+     *
+     * @param targetID The foreign key ID of the target.
+     * @param method The measurement method (e.g., "ToA").
+     * @param timestamp The timestamp of the measurement.
+     * @return The auto-generated ID for this measurement, or -1 on failure.
+     */
     public int saveMeasurements(int targetID, String method, long timestamp){
         final String sql = """
             INSERT INTO Measurements (targetID, timestamp, dataType) 
@@ -123,6 +169,13 @@ public class MeasurementsDatabaseLogger {
         return -1; 
     }
     
+    /**
+     * Saves an {@link Anchor} to the database.
+     * If the anchor already exists (by anchorCode), it updates its properties.
+     *
+     * @param anchor The {@link Anchor} to save.
+     * @return The auto-generated ID of the anchor, or the existing ID. Returns -1 on failure.
+     */
     public int saveAnchor(Anchor anchor) {
         final String sql = """
             INSERT INTO Anchors (anchorCode, anchorName, anchorX, anchorY, anchorZ, anchorAlpha, anchorBeta, anchorGamma) 
@@ -143,6 +196,7 @@ public class MeasurementsDatabaseLogger {
             stmt.setString(1, anchor.getDeviceName());
             stmt.setString(2, anchor.getDeviceName()); 
             
+            // Assuming default position 0,0,0 if not set
             setDoubleOrNull(stmt, 3, 0); 
             setDoubleOrNull(stmt, 4, 0);
             setDoubleOrNull(stmt, 5, 0);
@@ -167,6 +221,13 @@ public class MeasurementsDatabaseLogger {
         }
     }
 
+    /**
+     * Saves a list of Time-of-Arrival (ToA) readings in a batch operation.
+     *
+     * @param measurementId The foreign key ID of the parent measurement.
+     * @param timestamp A general timestamp for the batch (note: individual readings also have timestamps).
+     * @param readings The list of {@link Reading} objects to save.
+     */
     public void saveToAreadings(int measurementId, long timestamp, List<Reading> readings) {    	
         final String sql = """
             INSERT INTO ToAreadings (measurementID, timestamp, anchorID, `Range`) 
@@ -179,7 +240,7 @@ public class MeasurementsDatabaseLogger {
         	for (Reading reading: readings) {
         		Anchor anchor = reading.getAnchor();
                 stmt.setInt(1, measurementId);
-                stmt.setLong(2, reading.getTimestamp()); 
+                stmt.setLong(2, reading.getTimestamp()); // Use the individual reading's timestamp
                 stmt.setInt(3, anchor.getDeviceID());
                 stmt.setDouble(4, reading.getDisctance()); 
                 
@@ -193,6 +254,12 @@ public class MeasurementsDatabaseLogger {
         }
     }
 
+    /**
+     * Retrieves the database ID for a Target given its unique code (device name).
+     *
+     * @param targetCode The unique string code of the target.
+     * @return The integer ID, or -1 if not found or an error occurs.
+     */
     public int getTargetIdByCode(String targetCode) {
         final String sql = "SELECT targetID FROM Targets WHERE targetCode = ?";
         try (Connection conn = dataSource.getConnection(); // Correctly uses DataSource
@@ -210,6 +277,12 @@ public class MeasurementsDatabaseLogger {
         return -1;
     }
 
+    /**
+     * Retrieves the database ID for an Anchor given its unique code (device name).
+     *
+     * @param anchorCode The unique string code of the anchor.
+     * @return The integer ID, or -1 if not found or an error occurs.
+     */
     public int getAnchorIdByCode(String anchorCode) {
         final String sql = "SELECT anchorID FROM Anchors WHERE anchorCode = ?";
         try (Connection conn = dataSource.getConnection(); // Correctly uses DataSource
@@ -227,6 +300,12 @@ public class MeasurementsDatabaseLogger {
         return -1;
     }
     
+    /**
+     * Deletes all records from a specified table.
+     *
+     * @param tableName The name of the table to clear.
+     * @throws SQLException if a database access error occurs or the table name is invalid.
+     */
     public void clearTable(String tableName) throws SQLException {
         String query = "DELETE FROM " + tableName;
 

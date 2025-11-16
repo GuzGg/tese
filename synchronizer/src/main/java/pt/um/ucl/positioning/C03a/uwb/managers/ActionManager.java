@@ -7,20 +7,37 @@ import java.time.ZoneId;
  * Manages the sequencing of actions (slow scan, fast scan, measurement)
  * based on predefined time intervals. This class determines the next action
  * for the UWB system and calculates relevant timing information.
+ * 
+ * @author Gustavo Oliveira
+ * @version 0.1
  */
 public class ActionManager {
+	
+	/**
+	 * Enumeration of possible actions the system can perform.
+	 */
 	public enum Action{
+		/** A comprehensive but slow scan for new devices. */
 		SLOW_SCAN,
+		/** A quicker scan for devices. */
 		FAST_SCAN,
+		/** A distance measurement round with known devices. */
 		MEASUREMENT
 	}
 	
+	/** Time period between slow scans (milliseconds). */
 	private long slowScanPeriod;
+	/** Time period after which a new fast scan is triggered (milliseconds). */
 	private long scanPeriod;
+	/** Minimum time interval between scans (milliseconds). */
 	private long scanInterval;
+	/** The duration of a single scan operation (milliseconds). */
 	private long scanTime;
+	/** The timestamp of the last scan. */
 	public LocalDateTime lastScan = LocalDateTime.now();
+	/** Timestamp until which the communication channel is considered busy (milliseconds). */
 	private long channelBusyUntil = LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+	/** Timestamp when the current action round started (milliseconds). */
 	private long actionStartingTime = LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
 	
 	/**
@@ -35,7 +52,8 @@ public class ActionManager {
 	
 	/**
 	 * Constructor that initializes action periods with values from a configuration source.
-	 * * @param slowScanPeriod The period for a slow scan in milliseconds.
+	 *
+	 * @param slowScanPeriod The period for a slow scan in milliseconds.
 	 * @param scanPeriod The period for a fast scan in milliseconds.
 	 * @param scanInterval The time between consecutive scans in milliseconds.
 	 * @param scanTime The duration of a single scan operation in milliseconds.
@@ -49,7 +67,8 @@ public class ActionManager {
 	
 	/**
 	 * Determines the next action for the UWB system based on time intervals.
-	 * * @return The next action, which can be SLOW_SCAN, FAST_SCAN, or MEASUREMENT.
+	 *
+	 * @return The next action, which can be SLOW_SCAN, FAST_SCAN, or MEASUREMENT.
 	 */
 	public Action nextAction() {
 		long now = LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
@@ -72,7 +91,8 @@ public class ActionManager {
 	/**
 	 * Calculates the time for the next slow scan.
 	 * It also updates the 'channelBusyUntil' time.
-	 * * @return The time in milliseconds for the next slow scan action to be scheduled.
+	 *
+	 * @return The time in milliseconds for the next slow scan action to be scheduled.
 	 */
 	public long getSlowScanTime(){
 		// Update channel busy time by adding the duration of the slow scan period and scan time
@@ -83,7 +103,8 @@ public class ActionManager {
 	/**
 	 * Calculates the time for the next fast scan.
 	 * It also updates the 'channelBusyUntil' time.
-	 * * @return The time in milliseconds for the next fast scan action to be scheduled.
+	 *
+	 * @return The time in milliseconds for the next fast scan action to be scheduled.
 	 */
 	public long getFastScanTime() {
 		this.setChannelBusyUntil(this.getChannelBusyUntil() + this.scanTime);
@@ -93,7 +114,8 @@ public class ActionManager {
 	/**
 	 * Calculates the measurement time for the next round based on the number of anchors and tags.
 	 * It updates the 'channelBusyUntil' time and the action starting time.
-	 * * @param numberOfAnchor The number of anchors in the system.
+	 *
+	 * @param numberOfAnchor The number of anchors in the system.
 	 * @param numberOfTags The number of tags in the system.
 	 * @return The timestamp in milliseconds when the next measurement action should start.
 	 */
@@ -112,7 +134,8 @@ public class ActionManager {
 
 	/**
 	 * Gets the timestamp when the communication channel will become free.
-	 * * @return The 'channelBusyUntil' timestamp in milliseconds.
+	 *
+	 * @return The 'channelBusyUntil' timestamp in milliseconds.
 	 */
 	public long getChannelBusyUntil() {
 		return channelBusyUntil;
@@ -120,7 +143,8 @@ public class ActionManager {
 
 	/**
 	 * Sets the timestamp for when the communication channel will become free.
-	 * * @param channelBusyUntil The new 'channelBusyUntil' timestamp in milliseconds.
+	 *
+	 * @param channelBusyUntil The new 'channelBusyUntil' timestamp in milliseconds.
 	 */
 	public void setChannelBusyUntil(long channelBusyUntil) {
 		this.channelBusyUntil = channelBusyUntil;
@@ -128,7 +152,8 @@ public class ActionManager {
 
 	/**
 	 * Gets the timestamp when the current action started.
-	 * * @return The 'actionStartingTime' timestamp in milliseconds.
+	 *
+	 * @return The 'actionStartingTime' timestamp in milliseconds.
 	 */
 	public long getActionStartingTime() {
 		return actionStartingTime;
@@ -136,7 +161,8 @@ public class ActionManager {
 
 	/**
 	 * Sets the timestamp for when the current action started.
-	 * * @param actionStartingTime The new 'actionStartingTime' timestamp in milliseconds.
+	 *
+	 * @param actionStartingTime The new 'actionStartingTime' timestamp in milliseconds.
 	 */
 	public void setActionStartingTime(long actionStartingTime) {
 		this.actionStartingTime = actionStartingTime;
@@ -144,7 +170,8 @@ public class ActionManager {
 	
 	/**
 	 * Gets the duration of a single scan operation.
-	 * * @return The scan time in milliseconds.
+	 *
+	 * @return The scan time in milliseconds.
 	 */
 	public long getScanTime() {
 		return this.scanTime;

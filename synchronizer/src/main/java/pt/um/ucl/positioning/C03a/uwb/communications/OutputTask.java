@@ -11,14 +11,44 @@ import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
+/**
+ * A {@link Runnable} task that processes a single {@link Tag}'s measurement data.
+ * <p>
+ * This task is designed to be run by the {@link OutputThread}'s executor service.
+ * It performs two main actions based on the application configuration:
+ * <ol>
+ * <li>Persists the tag's measurement data to the database via the {@link MeasurementsDatabaseLogger}.</li>
+ * <li>Sends the measurement data as a JSON payload to the remote Position Estimator endpoint via HTTP POST.</li>
+ * </ol>
+ * These actions are performed asynchronously and in parallel for different tags.
+ * 
+ * @author Gustavo Oliveira
+ * @version 0.1
+ */
 public class OutputTask implements Runnable {
+    /** The tag containing the measurement data to process. */
     private final Tag tag;
+    /** The endpoint URL for the Position Estimator. */
     private final String endpointUrl;
+    /** The database logger instance. */
     private final MeasurementsDatabaseLogger dbLogger;
+    /** Flag to enable/disable database export. */
     private final boolean exportToDbQ;
+    /** Flag to enable/disable Position Estimator export. */
     private final boolean exportToPeQ;
+    /** The authentication token for the Position Estimator. */
     private final String token;
 
+    /**
+     * Constructs a new output task.
+     *
+     * @param tag The tag with its completed measurement data.
+     * @param endpointUrl The URL of the Position Estimator service.
+     * @param dbLogger The shared {@link MeasurementsDatabaseLogger} instance.
+     * @param exportToDbQ {@code true} to enable database logging.
+     * @param exportToPeQ {@code true} to enable posting to the Position Estimator.
+     * @param token The authentication token for the Position Estimator.
+     */
     public OutputTask(Tag tag, String endpointUrl, MeasurementsDatabaseLogger dbLogger, boolean exportToDbQ, boolean exportToPeQ, String token) {
         this.tag = tag;
         this.endpointUrl = endpointUrl;
@@ -28,41 +58,53 @@ public class OutputTask implements Runnable {
         this.token = token;
     }
 
+    /**
+     * The main execution logic for the task.
+     * <p>
+     * It handles persisting the tag's last measurement to the database
+     * and/or sending it to the Position Estimator service.
+     */
     @Override
     public void run() {
         if (tag.getMeasurements().isEmpty()) {
             System.err.println("Error: Tag " + tag.getDeviceName() + " has no measurements to output.");
             return;
         }
+        // Get the last (and only) measurement added to this cloned tag
         Measurement measurement = tag.getMeasurements().get(tag.getMeasurements().size() - 1);
         int measurementId = -1;
         
+        // --- 1. Database Export ---
         if(this.exportToDbQ) {
             try {
                 System.out.println("OUTPUT: Persisting data for Tag " + tag.getDeviceName());
+                // Save the full measurement and get its new ID
                 measurementId = dbLogger.saveDataToA(tag, measurement); 
 
                 if (measurementId > 0) {
-                    measurement.setMeasurmentId(measurementId); 
+                    measurement.setMeasurmentId(measurementId); // Set ID for PE export
                 } else {
                     System.err.println("Failed to get valid ID for tag: " + tag.getDeviceName());
-                    return; 
+                    return; // Stop if DB save failed
                 }
             } catch (Exception dbException) {
                 System.err.println("DB Error for tag " + tag.getDeviceName() + ": " + dbException.getMessage());
                 dbException.printStackTrace();
-                return; 
+                return; // Stop if DB save failed
             }
         }
 
+        // --- 2. Position Estimator Export ---
         if(this.exportToPeQ) {
             try {
+                // Create the JSON payload from the measurement
                 JSONObject payloadJson = measurement.toJson();
-                payloadJson.put("accessToken" , this.token);
+                payloadJson.put("estimateAccessToken" , this.token);
                 String jsonString = payloadJson.toString();
                 
                 byte[] postData = jsonString.getBytes(StandardCharsets.UTF_8);
 
+                // Configure and send HTTP POST request
                 URL url = new URI(endpointUrl).toURL();
                 HttpURLConnection connection = (HttpURLConnection) url.openConnection();
                 connection.setRequestMethod("POST");
@@ -75,7 +117,7 @@ public class OutputTask implements Runnable {
                     os.write(postData);
                 }
 
-    	            int code = connection.getResponseCode();
+    	        int code = connection.getResponseCode();
                 System.out.println("Tag: " + tag.getDeviceName() + " | Estimator HTTP Response Code: " + code + " by worker " + Thread.currentThread().getName());
 
             } catch (Exception httpException) {
@@ -83,6 +125,5 @@ public class OutputTask implements Runnable {
                 httpException.printStackTrace();
             }
         }
-
     }
 }
