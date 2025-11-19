@@ -18,7 +18,7 @@
     <servlet-mapping>
         <servlet-name>C03a</servlet-name>
         
-        <url-pattern>/C03a/*</url-pattern>
+        <url-pattern>/*</url-pattern>
     </servlet-mapping>
    
 </web-app>

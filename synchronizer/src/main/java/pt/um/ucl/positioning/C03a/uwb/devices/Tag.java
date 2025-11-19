@@ -70,7 +70,7 @@ public class Tag extends Device {
 	 *
 	 * @return A list of {@link Measurement} objects.
 	 */
-	public List<Measurement> getMeasurements() {
+	public synchronized List<Measurement> getMeasurements() {
 		return this.measurements;
 	}
 
@@ -79,7 +79,7 @@ public class Tag extends Device {
 	 *
 	 * @param measurements The new list of {@link Measurement} objects.
 	 */
-	public void setMeasurements(List<Measurement> measurements) {
+	public synchronized void setMeasurements(List<Measurement> measurements) {
 		this.measurements = measurements;
 	}
 

@@ -244,8 +244,7 @@ public class C03a extends HttpServlet {
         response.setCharacterEncoding("UTF-8");
         String pathInfo = request.getPathInfo();
         
-        logger.info("Received POST request on path: " + pathInfo);
-
+        logger.info("logger.warning POST request on path: " + pathInfo);
         if (pathInfo == null || pathInfo.isEmpty()) {
             sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing path information.");
             return;
@@ -270,7 +269,7 @@ public class C03a extends HttpServlet {
 
         try {
             JSONObject jsonObj = new JSONObject(trimmedJson); 
-
+            
             // Route based on path
             if (PATH_BOOT.equals(pathInfo)) {
                 responseString = handleBootRequest(jsonObj);
