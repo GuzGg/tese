@@ -245,6 +245,7 @@ public class C03a extends HttpServlet {
         String pathInfo = request.getPathInfo();
         
         logger.info("logger.warning POST request on path: " + pathInfo);
+        logger.info(pathInfo);
         if (pathInfo == null || pathInfo.isEmpty()) {
             sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing path information.");
             return;
@@ -269,7 +270,7 @@ public class C03a extends HttpServlet {
 
         try {
             JSONObject jsonObj = new JSONObject(trimmedJson); 
-            
+            logger.info(jsonObj.toString());
             // Route based on path
             if (PATH_BOOT.equals(pathInfo)) {
                 responseString = handleBootRequest(jsonObj);
@@ -368,6 +369,7 @@ public class C03a extends HttpServlet {
                 Number executedAt = obj.getNumber("executedAt");
                 
                 Tag tag = this.synchronizer.listOfTags.get(tagID);
+                logger.info(tag.toString());
                 if (tag != null && tag.getMeasurements() != null && !tag.getMeasurements().isEmpty()) {
                     Measurement lastMeasurement = tag.getMeasurements().getLast();
                     // Check if the reading is for the current, valid time window
