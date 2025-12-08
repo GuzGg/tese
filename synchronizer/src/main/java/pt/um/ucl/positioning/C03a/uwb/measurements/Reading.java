@@ -11,13 +11,13 @@ import pt.um.ucl.positioning.C03a.uwb.devices.Anchor;
  * into a {@link Measurement} object.
  * 
  * @author Gustavo Oliveira
- * @version 0.1
+ * @version 0.2
  */
 public class Reading {
 	/** The anchor that took this reading. */
 	private Anchor anchor;
 	/** The measured distance (e.g., in millimeters). */
-	private long distance;
+	private double distance;
 	/** The timestamp when this specific reading was taken. */
 	private long timestamp;
 	/** The UWB channel used for this reading. */
@@ -31,7 +31,7 @@ public class Reading {
 	 * @param timestamp The timestamp of the reading.
 	 * @param channel The UWB channel used.
 	 */
-	public Reading (Anchor anchor, long distance, long timestamp, int channel) {
+	public Reading (Anchor anchor, double distance, long timestamp, int channel) {
 		this.anchor = anchor;
 		this.distance = distance;
 		this.timestamp = timestamp;
@@ -58,7 +58,7 @@ public class Reading {
 	 * Gets the measured distance.
 	 * @return The distance.
 	 */
-	public long getDisctance() {
+	public double getDisctance() {
 		return distance;
 	}
 
@@ -66,8 +66,8 @@ public class Reading {
 	 * Sets the measured distance.
 	 * @param disctance The new distance.
 	 */
-	public void setDisctance(long disctance) {
-		this.distance = disctance;
+	public void setDisctance(double distance) {
+		this.distance = distance;
 	}
 
 	/**

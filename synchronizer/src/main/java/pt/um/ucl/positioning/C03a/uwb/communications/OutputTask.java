@@ -23,7 +23,7 @@ import java.nio.charset.StandardCharsets;
  * These actions are performed asynchronously and in parallel for different tags.
  * 
  * @author Gustavo Oliveira
- * @version 0.1
+ * @version 0.2
  */
 public class OutputTask implements Runnable {
     /** The tag containing the measurement data to process. */
@@ -118,6 +118,7 @@ public class OutputTask implements Runnable {
                 }
 
     	        int code = connection.getResponseCode();
+    	        System.out.println("Tag: " + tag.getDeviceName() + " | Sending JSON:\n" + payloadJson.toString(4));
                 System.out.println("Tag: " + tag.getDeviceName() + " | Estimator HTTP Response Code: " + code + " by worker " + Thread.currentThread().getName());
 
             } catch (Exception httpException) {
