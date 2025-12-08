@@ -17,7 +17,7 @@ import pt.um.ucl.positioning.C03a.uwb.devices.Tag;
  * defined time window (start and end time).
  * 
  * @author Gustavo Oliveira
- * @version 0.2
+ * @version 0.3
  */
 public class Measurement {
 	/** The tag being measured. */
@@ -167,7 +167,7 @@ public class Measurement {
 
 		json.put("measurementID", this.getMeasurmentId());
 		json.put("targetID", this.getTag().getDeviceID());
-		json.put("targetCode", this.getTag().getDeviceID());
+		json.put("targetCode", this.getTag().getDeviceName());
 		json.put("timestamp", this.getMeasurmentEndTime());
 		json.put("dataType", "ToA"); // Time of Arrival
 		

@@ -58,7 +58,7 @@ import pt.um.ucl.positioning.C03a.uwb.managers.ActionManager.Action;
  * </ul>
  * 
  * @author Gustavo Oliveira
- * @version 0.1
+ * @version 0.4
  */
 public class C03a extends HttpServlet {
     private static final long serialVersionUID = 1L;
@@ -85,7 +85,7 @@ public class C03a extends HttpServlet {
     /** Holds all loaded application configuration properties. */
     private Config config;
     /** Current verion number */
-    private String version = "0.1";
+    private String version = "0.4";
     /** Initialization time */
     private LocalDateTime startupTime;
 
@@ -374,7 +374,7 @@ public class C03a extends HttpServlet {
                     Measurement lastMeasurement = tag.getMeasurements().getLast();
                     // Check if the reading is for the current, valid time window
                     if(lastMeasurement.checkIfValid(LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())) {
-                        Reading reading = new Reading(anchor, distance.longValue(), executedAt.longValue(), 5); // Channel 5 is hardcoded
+                        Reading reading = new Reading(anchor, distance.doubleValue(), executedAt.longValue(), 5); // Channel 5 is hardcoded
                         lastMeasurement.getReadings().add(reading);
                     } else {
                          logger.warning("Dropped reading for tag " + tagID + " from anchor " + anchorID + ": Measurement is stale/invalid.");
