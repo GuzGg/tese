@@ -305,7 +305,7 @@ public class C03a extends HttpServlet {
 
     /**
      * Handles the anchor registration request ({@code /anchorRegistration}).
-     * Registers a new anchor in the system, saves it to the database,
+     * Checks if the anchor exists in the DB first; if not, it creates it.
      * and returns the first action command.
      *
      * @param jsonObj The parsed JSON request body.
@@ -318,13 +318,26 @@ public class C03a extends HttpServlet {
             return "{\"error\":\"Missing or invalid 'anchorID' in boot request.\"}";
         }
 
-        String id = jsonObj.getString("anchorID");	
-        Anchor anchor = new Anchor(id, LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
-        // Save to DB and get the auto-generated ID
-        anchor.setDeviceID(this.dbLogger.saveAnchor(anchor));
+        String id = jsonObj.getString("anchorID");  
+        
+        Anchor anchor = new Anchor(id, 
+            LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), 
+            LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        );
+
+        int existingId = this.dbLogger.getAnchorIdByCode(id);
+
+        if (existingId != -1) {
+            anchor.setDeviceID(existingId);
+            logger.info("Anchor already exists: " + id + " (DB ID: " + existingId + ")");
+        } else {
+            int newId = this.dbLogger.saveAnchor(anchor);
+            anchor.setDeviceID(newId);
+            logger.info("Registered NEW anchor: " + id + " with database ID: " + newId);
+        }
+
         this.synchronizer.addNewAnchor(anchor);
         
-        logger.info("Registered new anchor: " + id + " with database ID: " + anchor.getDeviceID());
         return this.getResponse(anchor);
     }
 
@@ -429,16 +442,29 @@ public class C03a extends HttpServlet {
         }
         JSONArray tagArray = jsonObj.getJSONArray("tags");
 
-        // Register any new tags
         for (int i = 0; i < tagArray.length(); i++) {
             JSONObject obj = tagArray.getJSONObject(i);
             if (obj.has("tagID") && obj.get("tagID") instanceof String) {
                 String tagID = obj.getString("tagID");
-                Tag tag = new Tag(tagID, LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
+                
+                Tag tag = new Tag(tagID, 
+                    LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), 
+                    LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                );
+                
                 if (!this.synchronizer.tagExists(tag)) {
-                    tag.setDeviceID(this.dbLogger.saveTarget(tag));
+                    
+                    int existingId = this.dbLogger.getTargetIdByCode(tagID);
+                    
+                    if (existingId != -1) {
+                        tag.setDeviceID(existingId);
+                        logger.info("Tag found in DB, added to memory: " + tagID + " (DB ID: " + existingId + ")");
+                    } else {
+                        tag.setDeviceID(this.dbLogger.saveTarget(tag));
+                        logger.info("Discovered and registered NEW tag: " + tagID + " with database ID: " + tag.getDeviceID());
+                    }
+                    
                     this.synchronizer.addNewTag(tag);
-                    logger.info("Discovered and registered new tag: " + tagID + " with database ID: " + tag.getDeviceID());
                 }
             }
         }

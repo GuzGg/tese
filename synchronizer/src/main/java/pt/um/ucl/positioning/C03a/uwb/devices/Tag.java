@@ -14,7 +14,7 @@ import pt.um.ucl.positioning.C03a.uwb.measurements.Measurement;
  * {@link Measurement}s.
  * 
  * @author Gustavo Oliveira
- * @version 0.1
+ * @version 0.4
  */
 public class Tag extends Device {
 	
@@ -32,8 +32,8 @@ public class Tag extends Device {
 	 * @param initializedAt The timestamp when the tag was first initialized.
 	 * @param lastSeen The timestamp when the tag was last seen or active.
 	 */
-	public Tag(String deviceId, long initializedAt, long lastSeen) {
-		super(deviceId, initializedAt, lastSeen);
+	public Tag(String deviceName, long initializedAt, long lastSeen) {
+		super(deviceName, initializedAt, lastSeen);
 		this.distanceToNearestAnchor = 0;
 		this.measurements = new ArrayList<Measurement>();
 	}

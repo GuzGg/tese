@@ -11,7 +11,7 @@ import java.util.List;
  * {@link Device} class.
  * 
  * @author Gustavo Oliveira
- * @version 0.1
+ * @version 0.4
  */
 public class Anchor extends Device {
 
@@ -27,8 +27,8 @@ public class Anchor extends Device {
 	 * @param initializedAt The timestamp when the anchor was first initialized.
 	 * @param lastSeen The timestamp when the anchor was last seen or active.
 	 */
-	public Anchor(String deviceId, long initializedAt, long lastSeen) {
-		super(deviceId, initializedAt, lastSeen);
+	public Anchor(String deviceName, long initializedAt, long lastSeen) {
+		super(deviceName, initializedAt, lastSeen);
 		this.listOfTags = new ArrayList<Tag>();
 	}
 	
