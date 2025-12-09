@@ -8,22 +8,13 @@ import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
 import org.json.JSONObject;
 
 /**
  * A thread that manages the simulation lifecycle for a single {@link VirtualAnchor}.
- * <p>
- * This class handles all network communication with the central server, including:
- * <ul>
- * <li>Registering the anchor with the server ({@link #sendRegistrationRequest()}).</li>
- * <li>Entering a loop to send reports (scan/measure) and receive new actions.</li>
- * <li>Calling the anchor's {@link VirtualAnchor#VirtualBehaviour(JSONObject)} to get simulated data.</li>
- * </ul>
- * 
- * @author Gustavo Oliveira
+ * * @author Gustavo Oliveira
  * @version 0.1
  */
 public class SimulatorThread extends Thread {
@@ -37,30 +28,11 @@ public class SimulatorThread extends Thread {
 	/** API endpoint path for scan reports. */
 	private static final String PATH_SCAN = "/scanReport";
 	
-	/**
-	 * Constructs a new simulator thread.
-	 *
-	 * @param anchor The {@link VirtualAnchor} instance this thread will manage.
-	 * @param url The base URL of the server.
-	 */
 	public SimulatorThread(VirtualAnchor anchor, String url) {
 		this.anchor = anchor;
 		this.baseUrl = url;
 	}
 	
-	/**
-	 * The main execution loop for the anchor thread.
-	 * <p>
-	 * It first attempts to register the anchor. If successful, it enters a
-	 * continuous loop where it:
-	 * <ol>
-	 * <li>Delegates to the {@link VirtualAnchor#VirtualBehaviour(JSONObject)} to get a report.</li>
-	 * <li>Sends this report to the appropriate server endpoint.</li>
-	 * <li>Receives the next action from the server.</li>
-	 * <li>Waits for 1 second.</li>
-	 * </ol>
-	 * The loop terminates if the server returns a null action or an error occurs.
-	 */
 	public void run() {
 		
 		JSONObject action = this.sendRegistrationRequest();
@@ -98,13 +70,7 @@ public class SimulatorThread extends Thread {
 	}
 	
 	/**
-	 * Sends the initial registration request to the server.
-	 * <p>
-	 * This method sends a POST request to the {@link #PATH_BOOT} endpoint
-	 * with the anchor's ID.
-	 *
-	 * @return The first {@link JSONObject} action command from the server upon
-	 * successful registration, or {@code null} if registration fails.
+	 * Sends the initial registration request to the server using application/json.
 	 */
 	private JSONObject sendRegistrationRequest() {
 		try {
@@ -112,15 +78,19 @@ public class SimulatorThread extends Thread {
 			HttpURLConnection connection = (HttpURLConnection) url.openConnection();
 			connection.setRequestMethod("POST");
 			
-			connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+			// CHANGE 1: Set Content-Type to application/json
+			connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+			connection.setRequestProperty("Accept", "application/json");
 			connection.setDoOutput(true);
 			
 			JSONObject payload = new JSONObject();
 			payload.put("anchorID", anchor.getDeviceName());
-			String encodedPayload = "jsondata=" + URLEncoder.encode(payload.toString(), StandardCharsets.UTF_8.toString());
+			
+			// CHANGE 2: Send raw JSON string bytes (removed URLEncoder and 'jsondata=' prefix)
+			byte[] postData = payload.toString().getBytes(StandardCharsets.UTF_8);
 
 			try (OutputStream os = connection.getOutputStream()) {
-				os.write(encodedPayload.getBytes(StandardCharsets.UTF_8));
+				os.write(postData);
 			}
 			
 			int responseCode = connection.getResponseCode();
@@ -147,28 +117,22 @@ public class SimulatorThread extends Thread {
 	}
 	
 	/**
-	 * Sends an action report (scan or measure) to the server and receives the next action.
-	 * <p>
-	 * This method sends a POST request to the specified URL (either
-	 * {@link #PATH_MEASURE} or {@link #PATH_SCAN}) with the provided JSON payload.
-	 *
-	 * @param reply The {@link JSONObject} payload (the report) to send to the server.
-	 * @param url The fully constructed {@link URL} of the server endpoint to send the report to.
-	 * @return The next {@link JSONObject} action command from the server,
-	 * or {@code null} if the request fails or returns a non-OK status.
-	 * @throws Exception if an error occurs during the HTTP communication.
+	 * Sends an action report (scan or measure) to the server using application/json.
 	 */
 	private JSONObject sendActionRequest(JSONObject reply, URL url) throws Exception {
 		HttpURLConnection connection = (HttpURLConnection) url.openConnection();
 		connection.setRequestMethod("POST");
 		
-		connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+		// CHANGE 1: Set Content-Type to application/json
+		connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+		connection.setRequestProperty("Accept", "application/json");
 		connection.setDoOutput(true);
 		
-		String encodedPayload = "jsondata=" + URLEncoder.encode(reply.toString(), StandardCharsets.UTF_8.toString());
+		// CHANGE 2: Send raw JSON string bytes (removed URLEncoder and 'jsondata=' prefix)
+		byte[] postData = reply.toString().getBytes(StandardCharsets.UTF_8);
 		
 		try (OutputStream os = connection.getOutputStream()) {
-			os.write(encodedPayload.getBytes(StandardCharsets.UTF_8));
+			os.write(postData);
 		}
 
 		int responseCode = connection.getResponseCode();

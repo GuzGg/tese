@@ -26,7 +26,7 @@ public class Simulator {
 	 */
 	public Simulator(String baseUrl) {
 		// Note: The base URL is currently hardcoded, overriding the parameter.
-		this.baseUrl = "http://localhost:8080/uwb/C03a/";
+		this.baseUrl = "http://localhost:8080/C03a/";
 		this.simulatorThreads = new ArrayList<>();
 	}
 	
