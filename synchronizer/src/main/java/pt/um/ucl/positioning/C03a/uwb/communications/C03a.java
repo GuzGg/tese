@@ -58,7 +58,7 @@ import pt.um.ucl.positioning.C03a.uwb.managers.ActionManager.Action;
  * </ul>
  * 
  * @author Gustavo Oliveira
- * @version 0.5
+ * @version 0.6
  */
 public class C03a extends HttpServlet {
     private static final long serialVersionUID = 1L;
@@ -85,7 +85,7 @@ public class C03a extends HttpServlet {
     /** Holds all loaded application configuration properties. */
     private Config config;
     /** Current verion number */
-    private String version = "0.5";
+    private String version = "0.6";
     /** Initialization time */
     private LocalDateTime startupTime;
 
@@ -591,7 +591,7 @@ public class C03a extends HttpServlet {
 
     /**
      * Utility method to send a standardized JSON error response to the client.
-     *9
+     *
      * @param response The servlet response object.
      * @param statusCode The HTTP status code (e.g., 400, 404, 500).
      * @param message The error message to include in the JSON.
