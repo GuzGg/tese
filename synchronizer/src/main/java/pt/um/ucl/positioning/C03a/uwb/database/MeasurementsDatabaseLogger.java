@@ -38,6 +38,8 @@ public class MeasurementsDatabaseLogger {
     private final String user;
     /** The database password. */
     private final String password;
+    
+    private final boolean enableLogs;
 
     /** The connection pool manager. */
     private final DataSource dataSource;
@@ -54,7 +56,7 @@ public class MeasurementsDatabaseLogger {
         this.dbUrlBase = config.getDbUrl();
         this.user = config.getDbUsername();
         this.password = config.getDbPassword();
-        
+        this.enableLogs = config.isEnableLogs();
         this.dbUrlWithDb = this.dbUrlBase + "/" + config.getDbName();
     }
     
@@ -128,7 +130,7 @@ public class MeasurementsDatabaseLogger {
             return getTargetIdByCode(target.getDeviceName()); 
 
         } catch (SQLException e) {
-            System.err.println("Error saving Target: " + e.getMessage());
+        	 if(enableLogs) System.err.println("Error saving Target: " + e.getMessage());
             e.printStackTrace();
             return -1;
         }
@@ -163,7 +165,7 @@ public class MeasurementsDatabaseLogger {
                 }
             }
         } catch (SQLException e) {
-            System.err.println("Error saving Measurement record: " + e.getMessage());
+            if(enableLogs) System.err.println("Error saving Measurement record: " + e.getMessage());
             e.printStackTrace();
         }
         return -1; 
@@ -215,7 +217,7 @@ public class MeasurementsDatabaseLogger {
             return getAnchorIdByCode(anchor.getDeviceName());
             
         } catch (SQLException e) {
-            System.err.println("Error saving Anchor: " + e.getMessage());
+        	 if(enableLogs) System.err.println("Error saving Anchor: " + e.getMessage());
             e.printStackTrace();
             return -1;
         }
@@ -249,7 +251,7 @@ public class MeasurementsDatabaseLogger {
 
             stmt.executeBatch();
         } catch (SQLException e) {
-            System.err.println("Error saving ToA readings: " + e.getMessage());
+        	 if(enableLogs) System.err.println("Error saving ToA readings: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -271,7 +273,7 @@ public class MeasurementsDatabaseLogger {
                 }
             }
         } catch (SQLException e) {
-            System.err.println("DB Error for tag " + targetCode + ": " + e.getMessage());
+        	 if(enableLogs) System.err.println("DB Error for tag " + targetCode + ": " + e.getMessage());
             e.printStackTrace();
         }
         return -1;
@@ -294,7 +296,7 @@ public class MeasurementsDatabaseLogger {
                 }
             }
         } catch (SQLException e) {
-            System.err.println("DB Error for anchor " + anchorCode + ": " + e.getMessage());
+        	 if(enableLogs) System.err.println("DB Error for anchor " + anchorCode + ": " + e.getMessage());
             e.printStackTrace();
         }
         return -1;

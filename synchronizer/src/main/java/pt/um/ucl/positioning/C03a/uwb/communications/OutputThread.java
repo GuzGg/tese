@@ -33,6 +33,8 @@ public class OutputThread {
     private final boolean exportToDbQ;
     /** Flag to enable/disable Position Estimator export. */
     private final boolean exportToPeQ;
+    /** Flag to enable/disable Logs. */
+    private final boolean enableLogs;
     /** The authentication token for the Position Estimator. */
     private final String token;
 
@@ -45,11 +47,12 @@ public class OutputThread {
      * @param exportToPeQ {@code true} to enable posting to the Position Estimator.
      * @param token The authentication token for the Position Estimator.
      */
-    public OutputThread(String endpointUrl, MeasurementsDatabaseLogger dbLogger, boolean exportToDbQ, boolean exportToPeQ, String token) {
+    public OutputThread(String endpointUrl, MeasurementsDatabaseLogger dbLogger, boolean exportToDbQ, boolean exportToPeQ, boolean enableLogs, String token) {
         this.endpointUrl = endpointUrl;
         this.dbLogger = dbLogger;
         this.exportToDbQ = exportToDbQ;
         this.exportToPeQ = exportToPeQ;
+        this.enableLogs = enableLogs;
         this.token = token;
         System.out.println("Initialized Output Thread Pool with " + POOL_SIZE + " workers.");
     }
@@ -65,7 +68,7 @@ public class OutputThread {
      */
     public void submitTagBatch(List<Tag> tags) {
         for (Tag tag : tags) {
-            executorService.submit(new OutputTask(tag, endpointUrl, dbLogger, this.exportToDbQ, this.exportToPeQ, token));
+            executorService.submit(new OutputTask(tag, endpointUrl, dbLogger, this.exportToDbQ, this.exportToPeQ, this.enableLogs, token));
         }
     }
 
@@ -83,7 +86,7 @@ public class OutputThread {
             // Wait a while for existing tasks to terminate
             if (!executorService.awaitTermination(30, TimeUnit.SECONDS)) {
                 executorService.shutdownNow(); // Cancel currently executing tasks
-                System.err.println("Output pool did not shut down cleanly. Some tasks were aborted.");
+                if(this.enableLogs) System.err.println("Output pool did not shut down cleanly. Some tasks were aborted.");
             }
         } catch (InterruptedException e) {
             // (Re-)Cancel if current thread also interrupted

@@ -40,7 +40,11 @@ public class Config {
     private final boolean exportToDbQ;
     /** Flag to enable or disable exporting data to the Position Estimator Queue. */
     private final boolean exportToPeQ;
-
+    
+    // --- Log Flags ---
+    /** Flag to enable or disable Logs. */
+    private final boolean enableLogs;
+   
     // --- Position Estimator Properties ---
     /** The URL of the Position Estimator service. */
     private final String peUrl;
@@ -68,6 +72,9 @@ public class Config {
         // Export Flags
         this.exportToDbQ = Boolean.parseBoolean(props.getProperty("exportToDbQ"));
         this.exportToPeQ = Boolean.parseBoolean(props.getProperty("exportToPeQ"));
+        
+        //Logs
+        this.enableLogs = Boolean.parseBoolean(props.getProperty("enableLogs"));
 
         // Position Estimator
         this.peUrl = props.getProperty("pe.url");
@@ -135,4 +142,8 @@ public class Config {
      * @return The authentication token for the Position Estimator service.
      */
     public String getPeToken() {return peToken;}
+
+	public boolean isEnableLogs() {
+		return enableLogs;
+	}
 }

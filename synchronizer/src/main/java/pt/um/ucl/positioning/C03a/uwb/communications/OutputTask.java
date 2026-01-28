@@ -36,6 +36,8 @@ public class OutputTask implements Runnable {
     private final boolean exportToDbQ;
     /** Flag to enable/disable Position Estimator export. */
     private final boolean exportToPeQ;
+    /** Flag to enable/disable Logs. */
+    private final boolean enableLogs;
     /** The authentication token for the Position Estimator. */
     private final String token;
 
@@ -49,12 +51,13 @@ public class OutputTask implements Runnable {
      * @param exportToPeQ {@code true} to enable posting to the Position Estimator.
      * @param token The authentication token for the Position Estimator.
      */
-    public OutputTask(Tag tag, String endpointUrl, MeasurementsDatabaseLogger dbLogger, boolean exportToDbQ, boolean exportToPeQ, String token) {
+    public OutputTask(Tag tag, String endpointUrl, MeasurementsDatabaseLogger dbLogger, boolean exportToDbQ, boolean exportToPeQ, boolean enableLogs, String token) {
         this.tag = tag;
         this.endpointUrl = endpointUrl;
         this.dbLogger = dbLogger;
         this.exportToDbQ = exportToDbQ;
         this.exportToPeQ = exportToPeQ;
+        this.enableLogs = enableLogs;
         this.token = token;
     }
 
@@ -67,7 +70,7 @@ public class OutputTask implements Runnable {
     @Override
     public void run() {
         if (tag.getMeasurements().isEmpty()) {
-            System.err.println("Error: Tag " + tag.getDeviceName() + " has no measurements to output.");
+        	if(this.enableLogs) System.err.println("Error: Tag " + tag.getDeviceName() + " has no measurements to output.");
             return;
         }
         // Get the last (and only) measurement added to this cloned tag
@@ -77,18 +80,18 @@ public class OutputTask implements Runnable {
         // --- 1. Database Export ---
         if(this.exportToDbQ) {
             try {
-                System.out.println("OUTPUT: Persisting data for Tag " + tag.getDeviceName());
+            	if(this.enableLogs) System.out.println("OUTPUT: Persisting data for Tag " + tag.getDeviceName());
                 // Save the full measurement and get its new ID
                 measurementId = dbLogger.saveDataToA(tag, measurement); 
 
                 if (measurementId > 0) {
                     measurement.setMeasurmentId(measurementId); // Set ID for PE export
                 } else {
-                    System.err.println("Failed to get valid ID for tag: " + tag.getDeviceName());
+                	if(this.enableLogs) System.err.println("Failed to get valid ID for tag: " + tag.getDeviceName());
                     return; // Stop if DB save failed
                 }
             } catch (Exception dbException) {
-                System.err.println("DB Error for tag " + tag.getDeviceName() + ": " + dbException.getMessage());
+            	if(this.enableLogs) System.err.println("DB Error for tag " + tag.getDeviceName() + ": " + dbException.getMessage());
                 dbException.printStackTrace();
                 return; // Stop if DB save failed
             }
@@ -118,11 +121,11 @@ public class OutputTask implements Runnable {
                 }
 
     	        int code = connection.getResponseCode();
-    	        System.out.println("Tag: " + tag.getDeviceName() + " | Sending JSON:\n" + payloadJson.toString(4));
-                System.out.println("Tag: " + tag.getDeviceName() + " | Estimator HTTP Response Code: " + code + " by worker " + Thread.currentThread().getName());
+    	        if(this.enableLogs) System.out.println("Tag: " + tag.getDeviceName() + " | Sending JSON:\n" + payloadJson.toString(4));
+    	        if(this.enableLogs) System.out.println("Tag: " + tag.getDeviceName() + " | Estimator HTTP Response Code: " + code + " by worker " + Thread.currentThread().getName());
 
             } catch (Exception httpException) {
-                System.err.println("HTTP Error for tag " + tag.getDeviceName() + ": " + httpException.getMessage());
+            	if(this.enableLogs) System.err.println("HTTP Error for tag " + tag.getDeviceName() + ": " + httpException.getMessage());
                 httpException.printStackTrace();
             }
         }

@@ -91,6 +91,22 @@ public class Synchronizer {
 	}
 	
 	/**
+	 * Returns a list of all currently registered Tag objects.
+	 * @return A list of Tag objects.
+	 */
+	public synchronized List<Tag> getTagList() {
+	    return new ArrayList<>(this.listOfTags.values());
+	}
+
+	/**
+	 * Returns a list of all currently registered Anchor objects.
+	 * @return A list of Anchor objects.
+	 */
+	public synchronized List<Anchor> getAnchorList() {
+	    return new ArrayList<>(this.listOfAnchors.values());
+	}
+
+	/**
 	 * Creates a new {@link Measurement} object for every known tag for an upcoming
 	 * measurement round.
 	 * <p>
@@ -200,6 +216,16 @@ public class Synchronizer {
 	        e.printStackTrace();
 	        return "{\"error\":\"Failed to create measurement response JSON.\"}";
 	    }
+	    return jsonObject.toString();
+	}
+	
+	/**
+	 * Generates a JSON string to force an anchor to register.
+	 * * @return A JSON string representing a register command.
+	 */
+	public String getRegisterResponse() {
+	    JSONObject jsonObject = new JSONObject();
+	    jsonObject.put("actionToExecute", "register"); // Or whatever command your firmware expects
 	    return jsonObject.toString();
 	}
 }
