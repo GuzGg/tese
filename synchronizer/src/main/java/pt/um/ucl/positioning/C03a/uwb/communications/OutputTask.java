@@ -69,11 +69,9 @@ public class OutputTask implements Runnable {
         	if(this.enableLogs) System.err.println("Error: Tag " + tag.getDeviceName() + " has no measurements to output.");
             return;
         }
-        // Get the last (and only) measurement added to this cloned tag
         Measurement measurement = tag.getMeasurements().get(tag.getMeasurements().size() - 1);
         int measurementId = -1;
         
-        // --- 1. Database Export ---
         if(this.config.isExportToDbQ()) {
             try {
             	int retries = 0;
@@ -92,8 +90,7 @@ public class OutputTask implements Runnable {
             	        if (enableLogs) System.err.println("DB Failure (Attempt " + retries + "). Retrying...");
             	        
             	        if (retries >= config.getDbMaxRetries()) {
-            	            // CRITICAL FAILURE: Notify the servlet to terminate
-            	            context.signalFatalError("Failed to connect to DB after " + retries + " attempts.");
+            	            this.context.signalFatalError("Failed to connect to DB after " + retries + " attempts.");
             	            return; 
             	        }
             	        
@@ -103,11 +100,10 @@ public class OutputTask implements Runnable {
             } catch (Exception dbException) {
             	if(this.enableLogs) System.err.println("DB Error for tag " + tag.getDeviceName() + ": " + dbException.getMessage());
                 dbException.printStackTrace();
-                return; // Stop if DB save failed
+                return;
             }
         }
 
-        // --- 2. Position Estimator Export ---
         if(this.config.isExportToPeQ()) {
             try {
                 // Create the JSON payload from the measurement

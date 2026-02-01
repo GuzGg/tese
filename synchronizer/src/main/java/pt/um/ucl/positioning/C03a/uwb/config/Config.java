@@ -79,9 +79,9 @@ public class Config {
         this.exportToPeQ = Boolean.parseBoolean(props.getProperty("exportToPeQ"));
         
         //Logs
-        this.enableInputLogs = Boolean.parseBoolean(props.getProperty("enableInputLogs"));
-        this.enableOutputLogs = Boolean.parseBoolean(props.getProperty("enableOutputLogs"));
-        this.enableGeneralLogs = Boolean.parseBoolean(props.getProperty("enableGeneralLogs"));
+        this.enableInputLogs = Boolean.parseBoolean(props.getProperty("enableInputLogs", "true"));
+        this.enableOutputLogs = Boolean.parseBoolean(props.getProperty("enableOutputLogs", "true"));
+        this.enableGeneralLogs = Boolean.parseBoolean(props.getProperty("enableGeneralLogs", "true"));
 
         // Position Estimator
         this.peUrl = props.getProperty("pe.url");
