@@ -2,6 +2,7 @@ package pt.um.ucl.positioning.C03a.uwb.communications;
 
 import pt.um.ucl.positioning.C03a.uwb.devices.Tag;
 import pt.um.ucl.positioning.C03a.uwb.measurements.Measurement;
+import pt.um.ucl.positioning.C03a.uwb.config.Config;
 import pt.um.ucl.positioning.C03a.uwb.database.MeasurementsDatabaseLogger;
 import org.json.JSONObject;
 
@@ -28,18 +29,15 @@ import java.nio.charset.StandardCharsets;
 public class OutputTask implements Runnable {
     /** The tag containing the measurement data to process. */
     private final Tag tag;
-    /** The endpoint URL for the Position Estimator. */
-    private final String endpointUrl;
     /** The database logger instance. */
     private final MeasurementsDatabaseLogger dbLogger;
-    /** Flag to enable/disable database export. */
-    private final boolean exportToDbQ;
-    /** Flag to enable/disable Position Estimator export. */
-    private final boolean exportToPeQ;
     /** Flag to enable/disable Logs. */
     private final boolean enableLogs;
-    /** The authentication token for the Position Estimator. */
-    private final String token;
+    /** System configuration. */
+    private final Config config;
+    /** Servelet context. */
+    private final C03a context;
+
 
     /**
      * Constructs a new output task.
@@ -51,14 +49,12 @@ public class OutputTask implements Runnable {
      * @param exportToPeQ {@code true} to enable posting to the Position Estimator.
      * @param token The authentication token for the Position Estimator.
      */
-    public OutputTask(Tag tag, String endpointUrl, MeasurementsDatabaseLogger dbLogger, boolean exportToDbQ, boolean exportToPeQ, boolean enableLogs, String token) {
+    public OutputTask(C03a context, Tag tag, MeasurementsDatabaseLogger dbLogger, Config config) {
+    	this.context = context;
         this.tag = tag;
-        this.endpointUrl = endpointUrl;
         this.dbLogger = dbLogger;
-        this.exportToDbQ = exportToDbQ;
-        this.exportToPeQ = exportToPeQ;
-        this.enableLogs = enableLogs;
-        this.token = token;
+        this.enableLogs = config.isEnableOutputLogs();
+        this.config = config;
     }
 
     /**
@@ -78,18 +74,32 @@ public class OutputTask implements Runnable {
         int measurementId = -1;
         
         // --- 1. Database Export ---
-        if(this.exportToDbQ) {
+        if(this.config.isExportToDbQ()) {
             try {
-            	if(this.enableLogs) System.out.println("OUTPUT: Persisting data for Tag " + tag.getDeviceName());
-                // Save the full measurement and get its new ID
-                measurementId = dbLogger.saveDataToA(tag, measurement); 
+            	int retries = 0;
+            	boolean success = false;
 
-                if (measurementId > 0) {
-                    measurement.setMeasurmentId(measurementId); // Set ID for PE export
-                } else {
-                	if(this.enableLogs) System.err.println("Failed to get valid ID for tag: " + tag.getDeviceName());
-                    return; // Stop if DB save failed
-                }
+            	while (retries < config.getDbMaxRetries() && !success) {
+            	    try {
+            	        measurementId = dbLogger.saveDataToA(tag, measurement);
+            	        if (measurementId > 0) {
+            	            success = true;
+            	        } else {
+            	            throw new Exception("Invalid ID returned");
+            	        }
+            	    } catch (Exception e) {
+            	        retries++;
+            	        if (enableLogs) System.err.println("DB Failure (Attempt " + retries + "). Retrying...");
+            	        
+            	        if (retries >= config.getDbMaxRetries()) {
+            	            // CRITICAL FAILURE: Notify the servlet to terminate
+            	            context.signalFatalError("Failed to connect to DB after " + retries + " attempts.");
+            	            return; 
+            	        }
+            	        
+            	        try { Thread.sleep(config.getDbRetryDelay()); } catch (InterruptedException ignored) {}
+            	    }
+            	}
             } catch (Exception dbException) {
             	if(this.enableLogs) System.err.println("DB Error for tag " + tag.getDeviceName() + ": " + dbException.getMessage());
                 dbException.printStackTrace();
@@ -98,17 +108,17 @@ public class OutputTask implements Runnable {
         }
 
         // --- 2. Position Estimator Export ---
-        if(this.exportToPeQ) {
+        if(this.config.isExportToPeQ()) {
             try {
                 // Create the JSON payload from the measurement
                 JSONObject payloadJson = measurement.toJson();
-                payloadJson.put("estimateAccessToken" , this.token);
+                payloadJson.put("estimateAccessToken" , this.config.getPeToken());
                 String jsonString = payloadJson.toString();
                 
                 byte[] postData = jsonString.getBytes(StandardCharsets.UTF_8);
 
                 // Configure and send HTTP POST request
-                URL url = new URI(endpointUrl).toURL();
+                URL url = new URI(config.getDbUrl()).toURL();
                 HttpURLConnection connection = (HttpURLConnection) url.openConnection();
                 connection.setRequestMethod("POST");
                 

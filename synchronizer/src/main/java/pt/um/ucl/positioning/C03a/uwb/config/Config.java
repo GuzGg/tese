@@ -42,14 +42,19 @@ public class Config {
     private final boolean exportToPeQ;
     
     // --- Log Flags ---
-    /** Flag to enable or disable Logs. */
-    private final boolean enableLogs;
+    /** Flags to enable or disable Logs. */
+    private final boolean enableInputLogs;
+    private final boolean enableOutputLogs;
+    private final boolean enableGeneralLogs;
    
     // --- Position Estimator Properties ---
     /** The URL of the Position Estimator service. */
     private final String peUrl;
     /** The authentication token (e.g., Bearer token) for the Position Estimator service. */
     private final String peToken;
+    
+    private final int dbMaxRetries;
+    private final int dbRetryDelay;
 
     /**
      * Constructs a new Config object by parsing properties from a {@link Properties} object.
@@ -74,11 +79,16 @@ public class Config {
         this.exportToPeQ = Boolean.parseBoolean(props.getProperty("exportToPeQ"));
         
         //Logs
-        this.enableLogs = Boolean.parseBoolean(props.getProperty("enableLogs"));
+        this.enableInputLogs = Boolean.parseBoolean(props.getProperty("enableInputLogs"));
+        this.enableOutputLogs = Boolean.parseBoolean(props.getProperty("enableOutputLogs"));
+        this.enableGeneralLogs = Boolean.parseBoolean(props.getProperty("enableGeneralLogs"));
 
         // Position Estimator
         this.peUrl = props.getProperty("pe.url");
         this.peToken = props.getProperty("pe.token");
+        
+        this.dbMaxRetries = Integer.parseInt(props.getProperty("db.maxRetries", "5"));
+        this.dbRetryDelay = Integer.parseInt(props.getProperty("db.retryDelay", "10000"));
     }
 
     // --- Public Getters ---
@@ -142,8 +152,19 @@ public class Config {
      * @return The authentication token for the Position Estimator service.
      */
     public String getPeToken() {return peToken;}
+    
+    public boolean isEnableInputLogs() {
+		return enableInputLogs;
+    }
 
-	public boolean isEnableLogs() {
-		return enableLogs;
+    public boolean isEnableOutputLogs() {
+		return enableOutputLogs;
+    }
+    
+	public boolean isEnableGeneralLogs() {
+		return enableGeneralLogs;
 	}
+	
+	public int getDbMaxRetries() { return dbMaxRetries; }
+	public int getDbRetryDelay() { return dbRetryDelay; }
 }

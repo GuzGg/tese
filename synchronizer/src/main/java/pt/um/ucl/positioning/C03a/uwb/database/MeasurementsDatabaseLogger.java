@@ -56,7 +56,7 @@ public class MeasurementsDatabaseLogger {
         this.dbUrlBase = config.getDbUrl();
         this.user = config.getDbUsername();
         this.password = config.getDbPassword();
-        this.enableLogs = config.isEnableLogs();
+        this.enableLogs = config.isEnableOutputLogs();
         this.dbUrlWithDb = this.dbUrlBase + "/" + config.getDbName();
     }
     

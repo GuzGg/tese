@@ -92,6 +92,8 @@ public class C03a extends HttpServlet {
 	private LocalDateTime startupTime;
 	
 	private HikariDataSource datasource;
+	
+	private boolean isOperational = true;
 
 	/**
 	 * Default constructor.
@@ -132,7 +134,7 @@ public class C03a extends HttpServlet {
 	    }
 
 	    // 2. NOW it is safe to use config for conditional logging
-	    if (config.isEnableLogs()) logger.info("Configuration loaded. Initializing ActionManager and HikariCP...");
+	    if (config.isEnableGeneralLogs()) logger.info("Configuration loaded. Initializing ActionManager and HikariCP...");
 
 	    this.actionManager = new ActionManager(
 	        this.config.getAmSlowScanPeriod(), this.config.getAmFastScanPeriod(),
@@ -157,19 +159,16 @@ public class C03a extends HttpServlet {
 	    try {
 	        this.dbLogger = new MeasurementsDatabaseLogger(this.datasource, this.config); 
 	        this.outputManager = new OutputThread(
-	            this.config.getPeUrl(), 
+	        		this,
 	            this.dbLogger, 
-	            config.isExportToDbQ(), 
-	            config.isExportToPeQ(),
-	            config.isEnableLogs(),
-	            config.getPeToken()
+	            this.config
 	        );
 	    } catch (Exception e) {
-	        if (config.isEnableLogs()) logger.log(Level.SEVERE, "Failed to initialize sub-components", e);
+	        if (config.isEnableGeneralLogs()) logger.log(Level.SEVERE, "Failed to initialize sub-components", e);
 	        throw new ServletException(e);
 	    }
 	    
-	    if (config.isEnableLogs()) logger.info("C30a Servlet "+version+" is ready.");
+	    if (config.isEnableGeneralLogs()) logger.info("C30a Servlet "+version+" is ready.");
 	}
 
 	/**
@@ -180,11 +179,11 @@ public class C03a extends HttpServlet {
 	public void destroy() {
 		if (this.outputManager != null) {
 			this.outputManager.shutdown();
-            if (config.isEnableLogs()) logger.info("OutputManager shutdown.");
+            if (config.isEnableGeneralLogs()) logger.info("OutputManager shutdown.");
 		}
 		if (this.datasource != null) {
             this.datasource.close(); // Graceful shutdown
-            if (config.isEnableLogs()) logger.info("HikariCP pool closed.");
+            if (config.isEnableGeneralLogs()) logger.info("HikariCP pool closed.");
         }
 		super.destroy();
 	}
@@ -203,7 +202,7 @@ public class C03a extends HttpServlet {
 
 		String pathInfo = request.getPathInfo();
 
-		if (config.isEnableLogs()) System.out.println(request.getPathInfo());
+		if (config.isEnableInputLogs()) System.out.println(request.getPathInfo());
 		if (pathInfo.equals("/status")) {
 		    PrintWriter writer = response.getWriter();
 		    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -259,12 +258,20 @@ public class C03a extends HttpServlet {
 	@Override
 	protected void doPost(HttpServletRequest request, HttpServletResponse response)
 			throws ServletException, IOException {
+		
+		if (!isOperational) {
+	        sendErrorResponse(response, 503, "Service Unavailable: Critical Database Failure.");
+	        return;
+	    }
+		
 		response.setContentType("application/json");
 		response.setCharacterEncoding("UTF-8");
 		String pathInfo = request.getPathInfo();
+		
 
-        if (config.isEnableLogs()) logger.info("logger.warning POST request on path: " + pathInfo);
-        if (config.isEnableLogs()) logger.info(pathInfo);
+
+        if (config.isEnableInputLogs()) logger.info("logger.warning POST request on path: " + pathInfo);
+        if (config.isEnableInputLogs()) logger.info(pathInfo);
 		if (pathInfo == null || pathInfo.isEmpty()) {
 			sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Missing path information.");
 			return;
@@ -275,7 +282,7 @@ public class C03a extends HttpServlet {
 		try (BufferedReader reader = request.getReader()) {
 			jsonString = reader.lines().collect(Collectors.joining());
 		} catch (IOException e) {
-            if (config.isEnableLogs()) logger.warning("Error reading request body: " + e.getMessage());
+            if (config.isEnableInputLogs()) logger.warning("Error reading request body: " + e.getMessage());
 			sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Error reading request body.");
 			return;
 		}
@@ -289,7 +296,7 @@ public class C03a extends HttpServlet {
 
 		try {
 			JSONObject jsonObj = new JSONObject(trimmedJson);
-            if (config.isEnableLogs()) logger.info(jsonObj.toString());
+            if (config.isEnableInputLogs()) logger.info(jsonObj.toString());
 			// Route based on path
 			if (PATH_BOOT.equals(pathInfo)) {
 				responseString = handleBootRequest(jsonObj);
@@ -314,10 +321,10 @@ public class C03a extends HttpServlet {
 						"Internal server error: Null response generated.");
 			}
 		} catch (JSONException e) {
-            if (config.isEnableLogs()) logger.warning("Invalid JSON received on path " + pathInfo + ": " + e.getMessage());
+            if (config.isEnableInputLogs()) logger.warning("Invalid JSON received on path " + pathInfo + ": " + e.getMessage());
 			sendErrorResponse(response, HttpServletResponse.SC_BAD_REQUEST, "Invalid JSON format: " + e.getMessage());
 		} catch (Exception e) {
-            if (config.isEnableLogs()) logger.log(Level.SEVERE, "An internal server error occurred during POST for " + pathInfo, e);
+            if (config.isEnableInputLogs()) logger.log(Level.SEVERE, "An internal server error occurred during POST for " + pathInfo, e);
 			sendErrorResponse(response, HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
 					"An internal server error occurred: " + e.getMessage());
 			e.printStackTrace();
@@ -335,7 +342,7 @@ public class C03a extends HttpServlet {
 	 */
 	private String handleBootRequest(JSONObject jsonObj) throws JSONException {
 		if (!jsonObj.has("anchorID") || !(jsonObj.get("anchorID") instanceof String)) {
-            if (config.isEnableLogs()) logger.warning("Boot request missing or invalid 'anchorID'.");
+            if (config.isEnableInputLogs()) logger.warning("Boot request missing or invalid 'anchorID'.");
 			return "{\"error\":\"Missing or invalid 'anchorID' in boot request.\"}";
 		}
 
@@ -348,11 +355,11 @@ public class C03a extends HttpServlet {
 
 		if (existingId != -1) {
 			anchor.setDeviceID(existingId);
-            if (config.isEnableLogs()) logger.info("Anchor already exists: " + id + " (DB ID: " + existingId + ")");
+            if (config.isEnableInputLogs()) logger.info("Anchor already exists: " + id + " (DB ID: " + existingId + ")");
 		} else {
 			int newId = this.dbLogger.saveAnchor(anchor);
 			anchor.setDeviceID(newId);
-            if (config.isEnableLogs()) logger.info("Registered NEW anchor: " + id + " with database ID: " + newId);
+            if (config.isEnableInputLogs()) logger.info("Registered NEW anchor: " + id + " with database ID: " + newId);
 		}
 
 		this.synchronizer.addNewAnchor(anchor);
@@ -374,7 +381,7 @@ public class C03a extends HttpServlet {
 	 */
 	private String handleMeasureRequest(JSONObject jsonObj) throws JSONException {
 		if (!jsonObj.has("anchorID") || !(jsonObj.get("anchorID") instanceof String)) {
-            if (config.isEnableLogs()) logger.warning("Measure request missing or invalid 'anchorID'.");
+            if (config.isEnableInputLogs()) logger.warning("Measure request missing or invalid 'anchorID'.");
 			return "{\"error\":\"Missing or invalid 'anchorID' in measure request.\"}";
 		}
 		String anchorID = jsonObj.getString("anchorID");
@@ -386,10 +393,10 @@ public class C03a extends HttpServlet {
 			return this.synchronizer.getRegisterResponse();
 		}
 		
-        if (config.isEnableLogs()) logger.fine("Processing measurement report from Anchor: " + anchorID);
+        if (config.isEnableInputLogs()) logger.fine("Processing measurement report from Anchor: " + anchorID);
 
 		if (!jsonObj.has("tags") || !(jsonObj.get("tags") instanceof JSONArray)) {
-            if (config.isEnableLogs()) logger.warning("Measure request missing or invalid 'tags' array.");
+            if (config.isEnableInputLogs()) logger.warning("Measure request missing or invalid 'tags' array.");
 			return "{\"error\":\"Missing or invalid 'tags' array in measure request.\"}";
 		}
 		JSONArray tagArray = jsonObj.getJSONArray("tags");
@@ -413,18 +420,13 @@ public class C03a extends HttpServlet {
 
 				if (tag != null && tag.getMeasurements() != null && !tag.getMeasurements().isEmpty()) {
 					Measurement lastMeasurement = tag.getMeasurements().getLast();
-					// Check if the reading is for the current, valid time window and if the anchor
-					// is not present yet
-					if (lastMeasurement
-							.checkIfValid(LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
+					// Check if the reading is for the current, valid time window and if the anchor is not present yet
+					if (lastMeasurement.checkIfValid(LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
 							&& !lastMeasurement.getAnchors().contains(anchor)) {
-						Reading reading = new Reading(anchor, distance.doubleValue(), executedAt.longValue(), 5); // Channel
-																													// 5
-																													// is
-																													// hardcoded
+						Reading reading = new Reading(anchor, distance.doubleValue(), executedAt.longValue(), 5);
 						lastMeasurement.getReadings().add(reading);
 					} else {
-			            if (config.isEnableLogs()) logger.warning("Dropped reading for tag " + tagID + " from anchor " + anchorID
+			            if (config.isEnableInputLogs()) logger.warning("Dropped reading for tag " + tagID + " from anchor " + anchorID
 								+ ": Measurement is stale/invalid.");
 					}
 				}
@@ -440,7 +442,7 @@ public class C03a extends HttpServlet {
 
 		// If complete, send data for output and start a new measurement round
 		if (measurementIsComplete) {
-            if (config.isEnableLogs()) logger.info("MEASUREMENT ROUND COMPLETE. At least one tag received reports from all " + anchorList.size()
+            if (config.isEnableInputLogs()) logger.info("MEASUREMENT ROUND COMPLETE. At least one tag received reports from all " + anchorList.size()
 					+ " anchors. Submitting data and resetting state.");
 
 			startOutputProcess(tagList);
@@ -465,7 +467,7 @@ public class C03a extends HttpServlet {
 	 */
 	private String handleScanRequest(JSONObject jsonObj) throws JSONException {
 		if (!jsonObj.has("anchorID") || !(jsonObj.get("anchorID") instanceof String)) {
-            if (config.isEnableLogs()) logger.warning("Scan request missing or invalid 'anchorID'.");
+            if (config.isEnableInputLogs()) logger.warning("Scan request missing or invalid 'anchorID'.");
 			return "{\"error\":\"Missing or invalid 'anchorID' in scan request.\"}";
 		}
 		String anchorID = jsonObj.getString("anchorID");
@@ -477,7 +479,7 @@ public class C03a extends HttpServlet {
 		}
 		
 		if (!jsonObj.has("tags") || !(jsonObj.get("tags") instanceof JSONArray)) {
-            if (config.isEnableLogs()) logger.warning("Scan request missing or invalid 'tags' array.");
+            if (config.isEnableInputLogs()) logger.warning("Scan request missing or invalid 'tags' array.");
 			return "{\"error\":\"Missing or invalid 'tags' array in scan request.\"}";
 		}
 		JSONArray tagArray = jsonObj.getJSONArray("tags");
@@ -496,10 +498,10 @@ public class C03a extends HttpServlet {
 
 					if (existingId != -1) {
 						tag.setDeviceID(existingId);
-			            if (config.isEnableLogs()) logger.info("Tag found in DB, added to memory: " + tagID + " (DB ID: " + existingId + ")");
+			            if (config.isEnableInputLogs()) logger.info("Tag found in DB, added to memory: " + tagID + " (DB ID: " + existingId + ")");
 					} else {
 						tag.setDeviceID(this.dbLogger.saveTarget(tag));
-			            if (config.isEnableLogs()) logger.info("Discovered and registered NEW tag: " + tagID + " with database ID: "
+			            if (config.isEnableInputLogs()) logger.info("Discovered and registered NEW tag: " + tagID + " with database ID: "
 								+ tag.getDeviceID());
 					}
 
@@ -550,10 +552,10 @@ public class C03a extends HttpServlet {
 				} else if (tag != null && !tag.getMeasurements().isEmpty()) {
 					// Log why a tag was skipped
 					if (measurement.getReadings().isEmpty()) {
-			            if (config.isEnableLogs()) logger.warning("Output process skipped tag " + tag.getDeviceName()
+			            if (config.isEnableOutputLogs()) logger.warning("Output process skipped tag " + tag.getDeviceName()
 								+ ": Last measurement has no readings.");
 					} else {
-			            if (config.isEnableLogs()) logger.fine("Output process skipped tag " + tag.getDeviceName()
+			            if (config.isEnableOutputLogs()) logger.fine("Output process skipped tag " + tag.getDeviceName()
 								+ ": Last measurement already submitted.");
 					}
 				}
@@ -561,7 +563,7 @@ public class C03a extends HttpServlet {
 		}
 
 		if (tagsToSubmit.isEmpty()) {
-            if (config.isEnableLogs()) logger.info("Output process skipped: No new valid tags with readings found in the batch.");
+            if (config.isEnableOutputLogs()) logger.info("Output process skipped: No new valid tags with readings found in the batch.");
 			return;
 		}
 
@@ -572,7 +574,7 @@ public class C03a extends HttpServlet {
 
 		// Submit the cloned, thread-safe list to the output manager
 		this.outputManager.submitTagBatch(tagsToSubmit);
-        if (config.isEnableLogs()) logger.info("Submitted " + tagsToSubmit.size() + " tag batches to OutputManager for processing.");
+        if (config.isEnableOutputLogs()) logger.info("Submitted " + tagsToSubmit.size() + " tag batches to OutputManager for processing.");
 	}
 
 	/**
@@ -618,11 +620,11 @@ public class C03a extends HttpServlet {
 			if (needsInitialStart || isStale) {
 
 				if (isStale) {
-		            if (config.isEnableLogs()) logger.warning("MEASUREMENT ROUND TIMEOUT/STALE. Submitting incomplete data and resetting state.");
+		            if (config.isEnableGeneralLogs()) logger.warning("MEASUREMENT ROUND TIMEOUT/STALE. Submitting incomplete data and resetting state.");
 					// Submit whatever partial data was collected
 					startOutputProcess(new ArrayList<>(this.synchronizer.listOfTags.values()));
 				} else {
-		            if (config.isEnableLogs()) logger.info("MEASUREMENT ROUND START. Initializing new measurement for tags.");
+		            if (config.isEnableGeneralLogs()) logger.info("MEASUREMENT ROUND START. Initializing new measurement for tags.");
 				}
 
 				// Create the new measurement round for all tags
@@ -643,11 +645,24 @@ public class C03a extends HttpServlet {
 	 * @throws IOException If an I/O error occurs writing the response.
 	 */
 	private void sendErrorResponse(HttpServletResponse response, int statusCode, String message) throws IOException {
-        if (config.isEnableLogs()) logger.warning("Sending error response. Status: " + statusCode + ", Message: " + message);
+        if (config.isEnableGeneralLogs()) logger.warning("Sending error response. Status: " + statusCode + ", Message: " + message);
 		response.setStatus(statusCode);
 		try (PrintWriter writer = response.getWriter()) {
 			writer.write("{\"error\": \"" + message + "\"}");
 			writer.flush();
 		}
+	}
+	
+	/** * Public method for the logger/tasks to report a fatal DB failure.
+	 */
+	public synchronized void signalFatalError(String reason) {
+	    if (!isOperational) return; // Already shut down
+	    
+	    this.isOperational = false;
+	    logger.severe("FATAL DATABASE ERROR: " + reason + ". Terminating service.");
+	    
+	    // Shut down sub-components
+	    if (this.outputManager != null) this.outputManager.shutdown();
+	    if (this.datasource != null) this.datasource.close();
 	}
 }

@@ -1,6 +1,7 @@
 package pt.um.ucl.positioning.C03a.uwb.communications;
 
 import pt.um.ucl.positioning.C03a.uwb.devices.Tag;
+import pt.um.ucl.positioning.C03a.uwb.config.Config;
 import pt.um.ucl.positioning.C03a.uwb.database.MeasurementsDatabaseLogger;
 
 import java.util.List;
@@ -25,18 +26,12 @@ public class OutputThread {
     
     /** The executor service that runs the output tasks. */
     private final ExecutorService executorService = Executors.newFixedThreadPool(POOL_SIZE);
-    /** The endpoint URL for the Position Estimator. */
-    private final String endpointUrl;
     /** The database logger instance. */
     private final MeasurementsDatabaseLogger dbLogger;
-    /** Flag to enable/disable database export. */
-    private final boolean exportToDbQ;
-    /** Flag to enable/disable Position Estimator export. */
-    private final boolean exportToPeQ;
-    /** Flag to enable/disable Logs. */
-    private final boolean enableLogs;
-    /** The authentication token for the Position Estimator. */
-    private final String token;
+    /** System configuration. */
+    private final Config config;
+    /** Servelet context. */
+    private final C03a context;
 
     /**
      * Constructs a new OutputThread manager.
@@ -47,14 +42,10 @@ public class OutputThread {
      * @param exportToPeQ {@code true} to enable posting to the Position Estimator.
      * @param token The authentication token for the Position Estimator.
      */
-    public OutputThread(String endpointUrl, MeasurementsDatabaseLogger dbLogger, boolean exportToDbQ, boolean exportToPeQ, boolean enableLogs, String token) {
-        this.endpointUrl = endpointUrl;
+    public OutputThread(C03a context, MeasurementsDatabaseLogger dbLogger, Config config) {
+    	this.context = context;
         this.dbLogger = dbLogger;
-        this.exportToDbQ = exportToDbQ;
-        this.exportToPeQ = exportToPeQ;
-        this.enableLogs = enableLogs;
-        this.token = token;
-        System.out.println("Initialized Output Thread Pool with " + POOL_SIZE + " workers.");
+        this.config = config;
     }
     
     /**
@@ -68,7 +59,7 @@ public class OutputThread {
      */
     public void submitTagBatch(List<Tag> tags) {
         for (Tag tag : tags) {
-            executorService.submit(new OutputTask(tag, endpointUrl, dbLogger, this.exportToDbQ, this.exportToPeQ, this.enableLogs, token));
+            executorService.submit(new OutputTask(context, tag, dbLogger, this.config));
         }
     }
 
@@ -83,13 +74,11 @@ public class OutputThread {
         System.out.println("Shutting down output thread pool...");
         executorService.shutdown(); // Disable new tasks from being submitted
         try {
-            // Wait a while for existing tasks to terminate
             if (!executorService.awaitTermination(30, TimeUnit.SECONDS)) {
                 executorService.shutdownNow(); // Cancel currently executing tasks
-                if(this.enableLogs) System.err.println("Output pool did not shut down cleanly. Some tasks were aborted.");
+                if(this.config.isEnableGeneralLogs()) System.err.println("Output pool did not shut down cleanly. Some tasks were aborted.");
             }
         } catch (InterruptedException e) {
-            // (Re-)Cancel if current thread also interrupted
             executorService.shutdownNow();
             Thread.currentThread().interrupt();
         }

@@ -6,7 +6,7 @@
          id="WebApp_ID"
          version="6.0">
     
-    <display-name>C03a, version 0.5</display-name>
+    <display-name>C03a, version 0.6</display-name>
     
     <servlet>
         <servlet-name>C03a</servlet-name>
