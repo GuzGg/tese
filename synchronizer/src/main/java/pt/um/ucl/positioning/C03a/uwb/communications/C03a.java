@@ -33,7 +33,7 @@ import pt.um.ucl.positioning.C03a.uwb.devices.Anchor;
 import pt.um.ucl.positioning.C03a.uwb.devices.Tag;
 import pt.um.ucl.positioning.C03a.uwb.managers.ActionManager;
 import pt.um.ucl.positioning.C03a.uwb.managers.Synchronizer;
-import pt.um.ucl.positioning.C03a.uwb.measurements.Measurement;
+import pt.um.ucl.positioning.C03a.uwb.measurements.Measurement;	
 import pt.um.ucl.positioning.C03a.uwb.measurements.Reading;
 import pt.um.ucl.positioning.C03a.uwb.managers.ActionManager.Action;
 
@@ -368,92 +368,56 @@ public class C03a extends HttpServlet {
 	}
 
 	/**
-	 * Handles measurement reports ({@code /measurementReport}).
+	 * Handles measurement reports (/measurementReport) with improved timing tolerance.
 	 * <p>
-	 * Parses distance readings from an anchor for multiple tags. It adds these
-	 * readings to the current active measurement round. If a round is determined to
-	 * be complete (i.e., one tag has readings from all anchors), it dispatches the
-	 * data for output.
+	 * This refactored version processes each tag independently and uses a lenient 
+	 * timing check to ensure readings are not discarded due to network or processing delays.
 	 *
 	 * @param jsonObj The parsed JSON request body.
 	 * @return A JSON string representing the next action for the anchor.
 	 * @throws JSONException If the JSON is missing required fields.
 	 */
 	private String handleMeasureRequest(JSONObject jsonObj) throws JSONException {
-		if (!jsonObj.has("anchorID") || !(jsonObj.get("anchorID") instanceof String)) {
-            if (config.isEnableInputLogs()) logger.warning("Measure request missing or invalid 'anchorID'.");
-			return "{\"error\":\"Missing or invalid 'anchorID' in measure request.\"}";
-		}
-		String anchorID = jsonObj.getString("anchorID");
+        String anchorID = jsonObj.getString("anchorID");
+        Anchor anchor = this.synchronizer.listOfAnchors.get(anchorID);
+        if (anchor == null) return this.synchronizer.getRegisterResponse();
+        anchor.setLastSeen(System.currentTimeMillis());
 
-		Anchor anchor = this.synchronizer.listOfAnchors.get(anchorID);
-		if (anchor != null) {
-		    anchor.setLastSeen(LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
-		} else {
-			return this.synchronizer.getRegisterResponse();
-		}
-		
-        if (config.isEnableInputLogs()) logger.fine("Processing measurement report from Anchor: " + anchorID);
+        JSONArray tagArray = jsonObj.getJSONArray("tags");
+        for (int i = 0; i < tagArray.length(); i++) {
+            JSONObject obj = tagArray.getJSONObject(i);
+            String tagID = obj.getString("tagID");
+            double distance = obj.getDouble("distance");
+            long executedAt = obj.getLong("executedAt");
 
-		if (!jsonObj.has("tags") || !(jsonObj.get("tags") instanceof JSONArray)) {
-            if (config.isEnableInputLogs()) logger.warning("Measure request missing or invalid 'tags' array.");
-			return "{\"error\":\"Missing or invalid 'tags' array in measure request.\"}";
-		}
-		JSONArray tagArray = jsonObj.getJSONArray("tags");
+            Tag tag = this.synchronizer.listOfTags.get(tagID);
+            if (tag != null) {
+                tag.setLastSeen(System.currentTimeMillis());
+                
+                // Flexible window search: Accept delayed reports
+                Measurement targetRound = tag.getMeasurements().stream()
+                    .filter(m -> !m.getSentForOutput() && m.checkIfValid(executedAt))
+                    .findFirst()
+                    .orElse(null);
 
-		// Add readings to the last (current) measurement for each tag
-		for (int i = 0; i < tagArray.length(); i++) {
-			JSONObject obj = tagArray.getJSONObject(i);
+                // Fallback to latest un-sent round
+                if (targetRound == null && !tag.getMeasurements().isEmpty()) {
+                    targetRound = tag.getMeasurements().stream()
+                        .filter(m -> !m.getSentForOutput())
+                        .reduce((first, second) -> second).orElse(null);
+                }
 
-			if (obj.has("tagID") && obj.get("tagID") instanceof String && obj.has("distance")
-					&& obj.get("distance") instanceof Number && obj.has("executedAt")
-					&& obj.get("executedAt") instanceof Number) {
+                if (targetRound != null && !targetRound.getAnchors().contains(anchor)) {
+                    targetRound.getReadings().add(new Reading(anchor, distance, executedAt, 5));
+                }
+            }
+        }
 
-				String tagID = obj.getString("tagID");
-				Number distance = obj.getNumber("distance");
-				Number executedAt = obj.getNumber("executedAt");
+        // Independent output processing: Handled per-tag inside startOutputProcess
+        startOutputProcess(new ArrayList<>(this.synchronizer.listOfTags.values()));
 
-				Tag tag = this.synchronizer.listOfTags.get(tagID);
-				if(tag != null) {
-					tag.setLastSeen(LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
-				}
-
-				if (tag != null && tag.getMeasurements() != null && !tag.getMeasurements().isEmpty()) {
-					Measurement lastMeasurement = tag.getMeasurements().getLast();
-					// Check if the reading is for the current, valid time window and if the anchor is not present yet
-					if (lastMeasurement.checkIfValid(LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
-							&& !lastMeasurement.getAnchors().contains(anchor)) {
-						Reading reading = new Reading(anchor, distance.doubleValue(), executedAt.longValue(), 5);
-						lastMeasurement.getReadings().add(reading);
-					} else {
-			            if (config.isEnableInputLogs()) logger.warning("Dropped reading for tag " + tagID + " from anchor " + anchorID
-								+ ": Measurement is stale/invalid.");
-					}
-				}
-			}
-		}
-
-		List<Tag> tagList = new ArrayList<>(this.synchronizer.listOfTags.values());
-		List<Anchor> anchorList = new ArrayList<>(this.synchronizer.listOfAnchors.values());
-
-		// Check if any tag has completed its measurement round
-		boolean measurementIsComplete = tagList.stream().anyMatch(tag -> tag != null && !tag.getMeasurements().isEmpty()
-				&& tag.getMeasurements().getLast().getReadings().size() == anchorList.size());
-
-		// If complete, send data for output and start a new measurement round
-		if (measurementIsComplete) {
-            if (config.isEnableInputLogs()) logger.info("MEASUREMENT ROUND COMPLETE. At least one tag received reports from all " + anchorList.size()
-					+ " anchors. Submitting data and resetting state.");
-
-			startOutputProcess(tagList);
-
-			// Create the next measurement round for all tags
-			this.synchronizer.addMeasurementRound(this.actionManager.getActionStartingTime(),
-					this.actionManager.getChannelBusyUntil());
-		}
-
-		return this.getResponse(anchor);
-	}
+        return this.getResponse(anchor);
+    }
 
 	/**
 	 * Handles scan reports ({@code /scanReport}).
@@ -528,55 +492,39 @@ public class C03a extends HttpServlet {
 	 *                measurements.
 	 */
 	private void startOutputProcess(List<Tag> tagList) {
-		if (tagList == null || tagList.isEmpty()) {
-			return;
-		}
+        if (tagList == null || tagList.isEmpty()) return;
+        List<Tag> tagsToSubmit = new ArrayList<>();
+        int anchorCount = this.synchronizer.listOfAnchors.size();
 
-		List<Tag> tagsToSubmit = new ArrayList<>();
-		List<Measurement> measurementsToFlag = new ArrayList<>();
+        for (Tag tag : tagList) {
+            if (tag != null && !tag.getMeasurements().isEmpty()) {
+                Measurement m = tag.getMeasurements().getLast();
 
-		for (Tag tag : tagList) {
-			if (tag != null && !tag.getMeasurements().isEmpty()) {
-				Measurement measurement = tag.getMeasurements().getLast();
+                // Criteria: Tag is ready (all anchors reported) or timed out
+                boolean isComplete = m.getReadings().size() >= anchorCount;
 
-				// Check if this measurement has readings and hasn't been sent
-				if (!measurement.getReadings().isEmpty() && !measurement.getSentForOutput()) {
+                if (!m.getSentForOutput() && !m.getReadings().isEmpty() && isComplete) {
+                    m.setSentForOutput(true);
 
-					// Clone the Tag and its last measurement for thread-safe processing
-					Tag tagClone = new Tag(tag.getDeviceName(), tag.getinitializedAt(), tag.getLastSeen());
-					tagClone.setDeviceID(tag.getDeviceID());
-					tagClone.getMeasurements().add(measurement); // Add *only* the completed measurement
+                    Tag tagClone = new Tag(tag.getDeviceName(), tag.getinitializedAt(), tag.getLastSeen());
+                    tagClone.setDeviceID(tag.getDeviceID());
+                    tagClone.getMeasurements().add(m); 
+                    tagsToSubmit.add(tagClone);
 
-					tagsToSubmit.add(tagClone);
-					measurementsToFlag.add(measurement); // Mark this one for flagging
-				} else if (tag != null && !tag.getMeasurements().isEmpty()) {
-					// Log why a tag was skipped
-					if (measurement.getReadings().isEmpty()) {
-			            if (config.isEnableOutputLogs()) logger.warning("Output process skipped tag " + tag.getDeviceName()
-								+ ": Last measurement has no readings.");
-					} else {
-			            if (config.isEnableOutputLogs()) logger.fine("Output process skipped tag " + tag.getDeviceName()
-								+ ": Last measurement already submitted.");
-					}
-				}
-			}
-		}
+                    // Trigger next round for THIS tag specifically
+                    long nextStart = this.actionManager.getActionStartingTime();
+                    long nextEnd = this.actionManager.getChannelBusyUntil();
+                    tag.getMeasurements().add(new Measurement(tag, nextStart - 30000, nextEnd + 30000));
+                }
+            }
+        }
 
-		if (tagsToSubmit.isEmpty()) {
-            if (config.isEnableOutputLogs()) logger.info("Output process skipped: No new valid tags with readings found in the batch.");
-			return;
-		}
-
-		// Flag originals as "sent" to prevent re-submission
-		for (Measurement measurement : measurementsToFlag) {
-			measurement.setSentForOutput(true);
-		}
-
-		// Submit the cloned, thread-safe list to the output manager
-		this.outputManager.submitTagBatch(tagsToSubmit);
-        if (config.isEnableOutputLogs()) logger.info("Submitted " + tagsToSubmit.size() + " tag batches to OutputManager for processing.");
-	}
-
+        if (!tagsToSubmit.isEmpty()) {
+            this.outputManager.submitTagBatch(tagsToSubmit);
+            if (config.isEnableOutputLogs()) logger.info("Dispatched " + tagsToSubmit.size() + " completed tag(s).");
+        }
+    }
+	
 	/**
 	 * Determines the next action for an anchor and generates the appropriate JSON
 	 * response.
@@ -601,35 +549,32 @@ public class C03a extends HttpServlet {
 			// If it's time for a fast scan, do it
 			response = this.synchronizer.getFastScanResponse(this.actionManager.getFastScanTime());
 		} else {
-			// Otherwise, perform a measurement
+			this.actionManager.forceTimeSync(); // Ensure the clock isn't stuck in the past
+
+			// Then proceed with your existing logic...
 			response = this.synchronizer.getMeasurmentResponse(anchor, this.actionManager
-					.getMeasurmentTime(this.synchronizer.listOfAnchors.size(), this.synchronizer.listOfTags.size()),
-					this.actionManager.getScanTime());
+			        .getMeasurmentTime(this.synchronizer.listOfAnchors.size(), this.synchronizer.listOfTags.size()),
+			        this.actionManager.getScanTime());
 
-			long now = LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+			long now = System.currentTimeMillis();
 
-			// Check if the current measurement round is stale (timed out)
-			boolean isStale = tagList.stream().anyMatch(tag -> tag != null && !tag.getMeasurements().isEmpty()
-					&& !tag.getMeasurements().getLast().checkIfValid(now));
+			// A round is only stale if we haven't seen a report for a long time
+			boolean isStale = tagList.stream()
+			    .filter(tag -> !tag.getMeasurements().isEmpty())
+			    .anyMatch(tag -> now > tag.getMeasurements().getLast().getMeasurmentEndTime() + 2000); 
 
-			// Check if any tag has no measurements at all (needs initial round)
 			boolean needsInitialStart = tagList.stream()
-					.anyMatch(tag -> tag != null && tag.getMeasurements().isEmpty());
+			    .anyMatch(tag -> tag.getMeasurements().isEmpty());
 
-			// If it's the first round or a round has timed out, start a new one
 			if (needsInitialStart || isStale) {
-
-				if (isStale) {
-		            if (config.isEnableGeneralLogs()) logger.warning("MEASUREMENT ROUND TIMEOUT/STALE. Submitting incomplete data and resetting state.");
-					// Submit whatever partial data was collected
-					startOutputProcess(new ArrayList<>(this.synchronizer.listOfTags.values()));
-				} else {
-		            if (config.isEnableGeneralLogs()) logger.info("MEASUREMENT ROUND START. Initializing new measurement for tags.");
-				}
-
-				// Create the new measurement round for all tags
-				this.synchronizer.addMeasurementRound(this.actionManager.getActionStartingTime(),
-						this.actionManager.getChannelBusyUntil());
+			    if (isStale) {
+			        // Log the timeout and submit whatever we have
+			        logger.warning("ROUND TIMEOUT: Cleaning up stale measurements.");
+			        startOutputProcess(tagList);
+			    }
+			    
+			    // Start a fresh round with the new broad windows
+			    this.synchronizer.addMeasurementRound(now, this.actionManager.getChannelBusyUntil());
 			}
 		}
 

@@ -76,10 +76,7 @@ public class MeasurementsDatabaseLogger {
             stmt.setDouble(index, value);
         }
     }
-
-    // --- Data Access Methods (Synchronization REMOVED) ---
-    // The DataSource ensures thread safety via connection pooling. Synchronization here harms throughput.
-
+    
     /**
      * Saves a complete measurement (Target, Measurement, and Readings) to the database.
      *

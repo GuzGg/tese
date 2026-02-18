@@ -116,16 +116,18 @@ public class Synchronizer {
 	 * @param endTime The end time for the new measurement round.
 	 */
 	public synchronized void addMeasurementRound(long startTime, long endTime) {
-	    List<Tag> tagList = new ArrayList<>(this.listOfTags.values());
-	    for (Tag tag : tagList) {
-	        // Add null check here
-	        if (tag == null) {
-	            System.err.println("Null tag found in tag list. Skipping.");
-	            continue;
-	        }
+	    long bufferMillis = 30000; // 30-second safety buffer
+	    for (Tag tag : listOfTags.values()) {
+	        if (tag == null) continue;
+	        
+	        // LIMIT HISTORY: Keep only the 3 most recent rounds to prevent memory leaks
 	        List<Measurement> measurements = tag.getMeasurements();
-	        measurements.add(new Measurement(tag, startTime, endTime));
-	        tag.setMeasurements(measurements);
+	        while (measurements.size() > 2) {
+	            measurements.remove(0); 
+	        }
+	        
+	        // Use broad windows to accommodate clock jitter
+	        measurements.add(new Measurement(tag, startTime - bufferMillis, endTime + bufferMillis));
 	    }
 	}
 	

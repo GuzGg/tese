@@ -64,76 +64,82 @@ public class OutputTask implements Runnable {
      * and/or sending it to the Position Estimator service.
      */
     @Override
-    public void run() {
-        if (tag.getMeasurements().isEmpty()) {
-        	if(this.enableLogs) System.err.println("Error: Tag " + tag.getDeviceName() + " has no measurements to output.");
-            return;
-        }
-        Measurement measurement = tag.getMeasurements().get(tag.getMeasurements().size() - 1);
-        int measurementId = -1;
-        
-        if(this.config.isExportToDbQ()) {
-            try {
-            	int retries = 0;
-            	boolean success = false;
-
-            	while (retries < config.getDbMaxRetries() && !success) {
-            	    try {
-            	        measurementId = dbLogger.saveDataToA(tag, measurement);
-            	        if (measurementId > 0) {
-            	            success = true;
-            	        } else {
-            	            throw new Exception("Invalid ID returned");
-            	        }
-            	    } catch (Exception e) {
-            	        retries++;
-            	        if (enableLogs) System.err.println("DB Failure (Attempt " + retries + "). Retrying...");
-            	        
-            	        if (retries >= config.getDbMaxRetries()) {
-            	            this.context.signalFatalError("Failed to connect to DB after " + retries + " attempts.");
-            	            return; 
-            	        }
-            	        
-            	        try { Thread.sleep(config.getDbRetryDelay()); } catch (InterruptedException ignored) {}
-            	    }
-            	}
-            } catch (Exception dbException) {
-            	if(this.enableLogs) System.err.println("DB Error for tag " + tag.getDeviceName() + ": " + dbException.getMessage());
-                dbException.printStackTrace();
-                return;
-            }
-        }
-
-        if(this.config.isExportToPeQ()) {
-            try {
-                // Create the JSON payload from the measurement
-                JSONObject payloadJson = measurement.toJson();
-                payloadJson.put("estimateAccessToken" , this.config.getPeToken());
-                String jsonString = payloadJson.toString();
-                
-                byte[] postData = jsonString.getBytes(StandardCharsets.UTF_8);
-
-                // Configure and send HTTP POST request
-                URL url = new URI(config.getDbUrl()).toURL();
-                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-                connection.setRequestMethod("POST");
-                
-                connection.setRequestProperty("Content-Type", "application/json");
-                connection.setRequestProperty("Content-Length", String.valueOf(postData.length));
-                connection.setDoOutput(true);
-
-                try (OutputStream os = connection.getOutputStream()) {
-                    os.write(postData);
-                }
-
-    	        int code = connection.getResponseCode();
-    	        if(this.enableLogs) System.out.println("Tag: " + tag.getDeviceName() + " | Sending JSON:\n" + payloadJson.toString(4));
-    	        if(this.enableLogs) System.out.println("Tag: " + tag.getDeviceName() + " | Estimator HTTP Response Code: " + code + " by worker " + Thread.currentThread().getName());
-
-            } catch (Exception httpException) {
-            	if(this.enableLogs) System.err.println("HTTP Error for tag " + tag.getDeviceName() + ": " + httpException.getMessage());
-                httpException.printStackTrace();
-            }
-        }
-    }
+	public void run() {
+	    if (tag.getMeasurements().isEmpty()) {
+	        if(this.enableLogs) System.err.println("Error: Tag " + tag.getDeviceName() + " has no measurements to output.");
+	        return;
+	    }
+	    
+	    // Retrieve the most recent measurement
+	    Measurement measurement = tag.getMeasurements().get(tag.getMeasurements().size() - 1);
+	    int measurementId = -1;
+	    
+	    // 1. Database Export
+	    if(this.config.isExportToDbQ()) {
+	        try {
+	            int retries = 0;
+	            boolean success = false;
+	
+	            while (retries < config.getDbMaxRetries() && !success) {
+	                try {
+	                    // Save to DB and capture the generated ID
+	                    measurementId = dbLogger.saveDataToA(tag, measurement);
+	                    
+	                    if (measurementId > 0) {
+	                        success = true;
+	                        // SYNC POINT: Update the object so toJson() sees the new ID
+	                        measurement.setMeasurmentId(measurementId); 
+	                    } else {
+	                        throw new Exception("Invalid ID returned from DatabaseLogger");
+	                    }
+	                } catch (Exception e) {
+	                    retries++;
+	                    if (enableLogs) System.err.println("DB Failure (Attempt " + retries + "). Retrying...");
+	                    
+	                    if (retries >= config.getDbMaxRetries()) {
+	                        this.context.signalFatalError("Failed to connect to DB after " + retries + " attempts.");
+	                        return; 
+	                    }
+	                    
+	                    try { Thread.sleep(config.getDbRetryDelay()); } catch (InterruptedException ignored) {}
+	                }
+	            }
+	        } catch (Exception dbException) {
+	            if(this.enableLogs) System.err.println("DB Error for tag " + tag.getDeviceName() + ": " + dbException.getMessage());
+	            return;
+	        }
+	    }
+	
+	    // 2. Position Estimator Export
+	    if(this.config.isExportToPeQ()) {
+	        try {
+	            // Now measurement.toJson() will include the correct measurementID
+	            JSONObject payloadJson = measurement.toJson();
+	            payloadJson.put("estimateAccessToken", this.config.getPeToken());
+	            String jsonString = payloadJson.toString();
+	            
+	            byte[] postData = jsonString.getBytes(StandardCharsets.UTF_8);
+	
+	            URL url = new URI(config.getPeUrl()).toURL();
+	            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+	            connection.setRequestMethod("POST");
+	            connection.setRequestProperty("Content-Type", "application/json");
+	            connection.setRequestProperty("Content-Length", String.valueOf(postData.length));
+	            connection.setDoOutput(true);
+	
+	            try (OutputStream os = connection.getOutputStream()) {
+	                os.write(postData);
+	            }
+	
+	            int code = connection.getResponseCode();
+	            if(this.enableLogs) {
+	                System.out.println("Tag: " + tag.getDeviceName() + " | Sending JSON:\n" + payloadJson.toString(4));
+	                System.out.println("Tag: " + tag.getDeviceName() + " | Estimator Response: " + code);
+	            }
+	
+	        } catch (Exception httpException) {
+	            if(this.enableLogs) System.err.println("HTTP Error for tag " + tag.getDeviceName() + ": " + httpException.getMessage());
+	        }
+	    }
+	}
 }

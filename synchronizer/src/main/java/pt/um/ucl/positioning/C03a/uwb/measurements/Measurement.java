@@ -17,7 +17,7 @@ import pt.um.ucl.positioning.C03a.uwb.devices.Tag;
  * defined time window (start and end time).
  * 
  * @author Gustavo Oliveira
- * @version 0.3
+ * @version 0.4
  */
 public class Measurement {
 	/** The tag being measured. */
@@ -54,8 +54,12 @@ public class Measurement {
 	 * @return {@code true} if the timestamp is between the start and end time (inclusive),
 	 * {@code false} otherwise.
 	 */
+	private static final long DELAY_TOLERANCE = 10000; 
+
 	public boolean checkIfValid(long timestamp) {
-		return timestamp >= this.measurmentStartTime && timestamp <= this.measurmentEndTime;
+	    // Allows the timestamp to be slightly outside the window to handle delays
+	    return timestamp >= (this.measurmentStartTime - DELAY_TOLERANCE) && 
+	           timestamp <= (this.measurmentEndTime + DELAY_TOLERANCE);
 	}
 	
 	/**

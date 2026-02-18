@@ -120,17 +120,34 @@ public class ActionManager {
 	 * @return The timestamp in milliseconds when the next measurement action should start.
 	 */
 	public long getMeasurmentTime(int numberOfAnchor, int numberOfTags) {
-		long now = LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
-		long lastScanMillis = this.lastScan.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
-		
-		// Check if a new measurement round should be initiated
-		if((now - lastScanMillis) > this.scanPeriod) {
-			this.setActionStartingTime(this.getChannelBusyUntil());		
-			// Calculate the total time the channel will be busy for this measurement round
-			this.setChannelBusyUntil(this.getChannelBusyUntil() + (long) (numberOfAnchor * numberOfTags * this.scanTime));
-		}
-		return this.getActionStartingTime();
+	    long now = System.currentTimeMillis();
+	    long lastScanMillis = this.lastScan.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+
+	    if (this.channelBusyUntil < now ||this.channelBusyUntil > now + 1200) {
+	        this.setChannelBusyUntil(now + 2000); 
+	    }
+
+	    if ((now - lastScanMillis) > this.scanPeriod) {
+	        this.setActionStartingTime(this.getChannelBusyUntil());		
+	        
+	        long roundDuration = (long) (numberOfAnchor * numberOfTags * this.scanTime);
+	        this.setChannelBusyUntil(this.getChannelBusyUntil() + roundDuration);
+	        
+	        this.lastScan = LocalDateTime.now();
+	    } else {
+	        this.setActionStartingTime( this.getActionStartingTime() + this.scanTime);		
+	    }
+	    return this.getActionStartingTime();
 	}
+	
+	public void forceTimeSync() {
+	    long now = System.currentTimeMillis();
+	    if (this.channelBusyUntil < now) {
+	        this.channelBusyUntil = now;
+	        this.actionStartingTime = now;
+	    }
+	}
+
 
 	/**
 	 * Gets the timestamp when the communication channel will become free.
