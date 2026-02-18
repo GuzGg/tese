@@ -118,11 +118,9 @@ public class C03a extends HttpServlet {
 	    super.init(servletConfig);
 	    this.startupTime = LocalDateTime.now();
 
-	    // 1. Load configuration from file FIRST
 	    Properties props = new Properties();
 	    try (InputStream input = servletConfig.getServletContext().getResourceAsStream("/WEB-INF/config.properties")) {
 	        if (input == null) {
-	            // Use logger directly; config doesn't exist yet
 	            logger.severe("CRITICAL: config.properties file not found in /WEB-INF/.");
 	            throw new ServletException("config.properties file not found.");
 	        }
@@ -133,7 +131,6 @@ public class C03a extends HttpServlet {
 	        throw new ServletException("Error loading config.properties", ex);
 	    }
 
-	    // 2. NOW it is safe to use config for conditional logging
 	    if (config.isEnableGeneralLogs()) logger.info("Configuration loaded. Initializing ActionManager and HikariCP...");
 
 	    this.actionManager = new ActionManager(
@@ -141,7 +138,6 @@ public class C03a extends HttpServlet {
 	        this.config.getAmScanInterval(), this.config.getAmScanTime()
 	    );
 
-	    // 3. Configure and Start HikariCP
 	    HikariConfig hikariConfig = new HikariConfig();
 	    hikariConfig.setJdbcUrl(this.config.getDbUrl() + "/" + this.config.getDbName());
 	    hikariConfig.setUsername(this.config.getDbUsername());
@@ -155,7 +151,6 @@ public class C03a extends HttpServlet {
 	    
 	    this.datasource = new HikariDataSource(hikariConfig);
 
-	    // 4. Initialize Logger & Asynchronous Output Manager
 	    try {
 	        this.dbLogger = new MeasurementsDatabaseLogger(this.datasource, this.config); 
 	        this.outputManager = new OutputThread(
@@ -277,7 +272,6 @@ public class C03a extends HttpServlet {
 			return;
 		}
 
-		// Read request body
 		String jsonString;
 		try (BufferedReader reader = request.getReader()) {
 			jsonString = reader.lines().collect(Collectors.joining());
@@ -309,7 +303,6 @@ public class C03a extends HttpServlet {
 				return;
 			}
 
-			// Send response
 			if (responseString != null) {
 				response.setStatus(HttpServletResponse.SC_OK);
 				try (PrintWriter writer = response.getWriter()) {
@@ -500,7 +493,6 @@ public class C03a extends HttpServlet {
             if (tag != null && !tag.getMeasurements().isEmpty()) {
                 Measurement m = tag.getMeasurements().getLast();
 
-                // Criteria: Tag is ready (all anchors reported) or timed out
                 boolean isComplete = m.getReadings().size() >= anchorCount;
 
                 if (!m.getSentForOutput() && !m.getReadings().isEmpty() && isComplete) {
@@ -543,22 +535,18 @@ public class C03a extends HttpServlet {
 		List<Tag> tagList = new ArrayList<>(this.synchronizer.listOfTags.values());
 
 		if (this.synchronizer.listOfTags.isEmpty()) {
-			// If no tags are known, force a slow scan
 			response = this.synchronizer.getSlowScanResponse(this.actionManager.getSlowScanTime());
 		} else if (action == Action.FAST_SCAN) {
-			// If it's time for a fast scan, do it
 			response = this.synchronizer.getFastScanResponse(this.actionManager.getFastScanTime());
 		} else {
 			this.actionManager.forceTimeSync(); // Ensure the clock isn't stuck in the past
 
-			// Then proceed with your existing logic...
 			response = this.synchronizer.getMeasurmentResponse(anchor, this.actionManager
 			        .getMeasurmentTime(this.synchronizer.listOfAnchors.size(), this.synchronizer.listOfTags.size()),
 			        this.actionManager.getScanTime());
 
 			long now = System.currentTimeMillis();
 
-			// A round is only stale if we haven't seen a report for a long time
 			boolean isStale = tagList.stream()
 			    .filter(tag -> !tag.getMeasurements().isEmpty())
 			    .anyMatch(tag -> now > tag.getMeasurements().getLast().getMeasurmentEndTime() + 2000); 
@@ -568,7 +556,6 @@ public class C03a extends HttpServlet {
 
 			if (needsInitialStart || isStale) {
 			    if (isStale) {
-			        // Log the timeout and submit whatever we have
 			        logger.warning("ROUND TIMEOUT: Cleaning up stale measurements.");
 			        startOutputProcess(tagList);
 			    }
@@ -599,14 +586,14 @@ public class C03a extends HttpServlet {
 	}
 	
 	/** * Public method for the logger/tasks to report a fatal DB failure.
+	 * @param reason Why the shutdown occurs
 	 */
 	public synchronized void signalFatalError(String reason) {
-	    if (!isOperational) return; // Already shut down
+	    if (!isOperational) return;
 	    
 	    this.isOperational = false;
 	    logger.severe("FATAL DATABASE ERROR: " + reason + ". Terminating service.");
 	    
-	    // Shut down sub-components
 	    if (this.outputManager != null) this.outputManager.shutdown();
 	    if (this.datasource != null) this.datasource.close();
 	}

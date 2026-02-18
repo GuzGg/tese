@@ -195,7 +195,6 @@ public class MeasurementsDatabaseLogger {
             stmt.setString(1, anchor.getDeviceName());
             stmt.setString(2, anchor.getDeviceName()); 
             
-            // Assuming default position 0,0,0 if not set
             setDoubleOrNull(stmt, 3, 0); 
             setDoubleOrNull(stmt, 4, 0);
             setDoubleOrNull(stmt, 5, 0);

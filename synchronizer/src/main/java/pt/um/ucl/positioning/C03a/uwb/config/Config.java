@@ -11,7 +11,7 @@ import java.util.Properties;
  * action manager, export flags, and position estimator.
  * 
  * @author Gustavo Oliveira
- * @version 0.1
+ * @version 0.6
  */
 public class Config {
 
@@ -153,14 +153,23 @@ public class Config {
      */
     public String getPeToken() {return peToken;}
     
+    /**
+     * @return {@code true} if input logs are enabled, {@code false} otherwise.
+     */
     public boolean isEnableInputLogs() {
 		return enableInputLogs;
     }
 
+    /**
+     * @return {@code true} if output logs are enabled, {@code false} otherwise.
+     */
     public boolean isEnableOutputLogs() {
 		return enableOutputLogs;
     }
     
+    /**
+     * @return {@code true} if general logs are enabled, {@code false} otherwise.
+     */
 	public boolean isEnableGeneralLogs() {
 		return enableGeneralLogs;
 	}

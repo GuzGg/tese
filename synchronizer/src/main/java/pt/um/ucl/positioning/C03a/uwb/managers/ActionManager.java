@@ -9,7 +9,7 @@ import java.time.ZoneId;
  * for the UWB system and calculates relevant timing information.
  * 
  * @author Gustavo Oliveira
- * @version 0.1
+ * @version 0.6
  */
 public class ActionManager {
 	
@@ -74,17 +74,14 @@ public class ActionManager {
 		long now = LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
 		long lastScanMillis = this.lastScan.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
 		
-		// If the last scan was a long time ago (greater than scanPeriod), perform a fast scan
 		if((now - lastScanMillis) > this.scanPeriod) {	
 			this.lastScan = LocalDateTime.now();
 			return Action.FAST_SCAN;
 		} 
-		// If the last scan was very recent (less than scanInterval), also perform a fast scan
 		else if((now - lastScanMillis) < this.scanInterval) {
 			return Action.FAST_SCAN;
 		}
 		
-		// Otherwise, a measurement is the next action
 		return Action.MEASUREMENT;
 	}
 	
@@ -95,7 +92,6 @@ public class ActionManager {
 	 * @return The time in milliseconds for the next slow scan action to be scheduled.
 	 */
 	public long getSlowScanTime(){
-		// Update channel busy time by adding the duration of the slow scan period and scan time
 		this.setChannelBusyUntil(this.getChannelBusyUntil() + (this.slowScanPeriod + this.scanTime));
 		return LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() + this.slowScanPeriod/this.scanTime;
 	}
@@ -140,6 +136,9 @@ public class ActionManager {
 	    return this.getActionStartingTime();
 	}
 	
+	/**
+	 * Forces a time sync
+	 */
 	public void forceTimeSync() {
 	    long now = System.currentTimeMillis();
 	    if (this.channelBusyUntil < now) {

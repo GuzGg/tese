@@ -24,7 +24,7 @@ import java.nio.charset.StandardCharsets;
  * These actions are performed asynchronously and in parallel for different tags.
  * 
  * @author Gustavo Oliveira
- * @version 0.2
+ * @version 0.6
  */
 public class OutputTask implements Runnable {
     /** The tag containing the measurement data to process. */
@@ -70,11 +70,9 @@ public class OutputTask implements Runnable {
 	        return;
 	    }
 	    
-	    // Retrieve the most recent measurement
 	    Measurement measurement = tag.getMeasurements().get(tag.getMeasurements().size() - 1);
 	    int measurementId = -1;
 	    
-	    // 1. Database Export
 	    if(this.config.isExportToDbQ()) {
 	        try {
 	            int retries = 0;
@@ -82,12 +80,10 @@ public class OutputTask implements Runnable {
 	
 	            while (retries < config.getDbMaxRetries() && !success) {
 	                try {
-	                    // Save to DB and capture the generated ID
 	                    measurementId = dbLogger.saveDataToA(tag, measurement);
 	                    
 	                    if (measurementId > 0) {
 	                        success = true;
-	                        // SYNC POINT: Update the object so toJson() sees the new ID
 	                        measurement.setMeasurmentId(measurementId); 
 	                    } else {
 	                        throw new Exception("Invalid ID returned from DatabaseLogger");
@@ -110,10 +106,8 @@ public class OutputTask implements Runnable {
 	        }
 	    }
 	
-	    // 2. Position Estimator Export
 	    if(this.config.isExportToPeQ()) {
 	        try {
-	            // Now measurement.toJson() will include the correct measurementID
 	            JSONObject payloadJson = measurement.toJson();
 	            payloadJson.put("estimateAccessToken", this.config.getPeToken());
 	            String jsonString = payloadJson.toString();

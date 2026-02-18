@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit;
  * and submits a new {@link OutputTask} for each tag to the thread pool.
  * 
  * @author Gustavo Oliveira
- * @version 0.1
+ * @version 0.6
  */
 public class OutputThread {
 
@@ -72,10 +72,10 @@ public class OutputThread {
      */
     public void shutdown() {
         System.out.println("Shutting down output thread pool...");
-        executorService.shutdown(); // Disable new tasks from being submitted
+        executorService.shutdown();
         try {
             if (!executorService.awaitTermination(30, TimeUnit.SECONDS)) {
-                executorService.shutdownNow(); // Cancel currently executing tasks
+                executorService.shutdownNow();
                 if(this.config.isEnableGeneralLogs()) System.err.println("Output pool did not shut down cleanly. Some tasks were aborted.");
             }
         } catch (InterruptedException e) {
