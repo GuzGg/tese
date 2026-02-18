@@ -54,7 +54,7 @@ public class Measurement {
 	 * @return {@code true} if the timestamp is between the start and end time (inclusive),
 	 * {@code false} otherwise.
 	 */
-	private static final long DELAY_TOLERANCE = 5000; 
+	private static final long DELAY_TOLERANCE = 10000; 
 
 	public boolean checkIfValid(long timestamp) {
 	    return timestamp >= (this.measurmentStartTime - DELAY_TOLERANCE) && 
