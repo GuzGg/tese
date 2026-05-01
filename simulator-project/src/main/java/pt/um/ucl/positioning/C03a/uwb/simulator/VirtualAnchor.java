@@ -37,17 +37,20 @@ public class VirtualAnchor extends Anchor {
 	/**
 	 * Appends a scheduled measurement to the text log file.
 	 */
-	private void logMeasurement(String tagId, Long time) {
-		String logMessage = getDeviceName() + " scheduled to measure " + tagId + " in " + time;
-		
-		// FileWriter with 'true' appends to the file instead of overwriting it
-		try (FileWriter fw = new FileWriter(logFileName, true);
-		     PrintWriter pw = new PrintWriter(fw)) {
-			pw.println(logMessage);
-		} catch (IOException e) {
-			System.err.println("Could not write to log file: " + e.getMessage());
-		}
-	}
+private void logMeasurement(String tagId, Long time) {
+    // tagId comes in as "tag1", so we replace "tag" with nothing to isolate the number
+    String cleanTagNumber = tagId.replace("tag", ""); 
+    
+    // Now we manually add the space
+    String logMessage = getDeviceName() + " scheduled to measure tag " + cleanTagNumber + " in " + time;
+    
+    try (FileWriter fw = new FileWriter(logFileName, true);
+         PrintWriter pw = new PrintWriter(fw)) {
+        pw.println(logMessage);
+    } catch (IOException e) {
+        System.err.println("Could not write to log file: " + e.getMessage());
+    }
+}
 	
 	public JSONObject VirtualBehaviour(JSONObject response) {
 	    String actionToExecute = response.getString("actionToExecute");
