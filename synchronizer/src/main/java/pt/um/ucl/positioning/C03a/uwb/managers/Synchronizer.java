@@ -1,5 +1,8 @@
 package pt.um.ucl.positioning.C03a.uwb.managers;
 
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -8,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import pt.um.ucl.positioning.C03a.uwb.devices.Anchor;
@@ -60,10 +64,10 @@ public class Synchronizer {
 	 * Initializes empty maps for tags and anchors.
 	 */
 	public Synchronizer() {
-		this.listOfTags = new LinkedHashMap<String, Tag>();
-		this.listOfAnchors = new LinkedHashMap<String, Anchor>();
-		this.whitelistOfTags = new HashSet<String>();
-		this.whitelistOfAnchors = new HashSet<String>();
+	    this.listOfTags = new ConcurrentHashMap<String, Tag>();
+	    this.listOfAnchors = new ConcurrentHashMap<String, Anchor>();
+	    this.whitelistOfTags = ConcurrentHashMap.newKeySet();
+	    this.whitelistOfAnchors = ConcurrentHashMap.newKeySet();
 	}
 	
 	/**
@@ -195,63 +199,69 @@ public class Synchronizer {
 	 * @return A JSON string representing the measure command, including a
 	 * list of tags and their scheduled execution times.
 	 */
-public String getMeasurmentResponse(Anchor anchor, long executionTime, long scanTime) {
-    // 1. CYCLE LOCKING & ACTIVE FILTER: If executionTime changed, a new cycle has begun.
-    // We snapshot only the anchors seen in the last 10 seconds to keep the schedule compact.
-    if (executionTime != this.currentCycleExecutionTime) {
-        this.currentCycleExecutionTime = executionTime;
-        
-        long activeThreshold = System.currentTimeMillis() - 10000; // 10-second activity window
-        
-        this.lockedAnchorList = this.listOfAnchors.values().stream()
-            .filter(a -> a.getLastSeen() > activeThreshold)
-            .collect(java.util.stream.Collectors.toList());
-            
-        this.lockedTagList = new ArrayList<>(this.listOfTags.values());
-    }
+	private void logServerExpectation(Anchor anchor, String tagId, long time) {
+	    String cleanTagNumber = tagId.replace("tag", ""); 
+	    String logMessage = "Server expected " + anchor.getDeviceName() + " to measure tag " + cleanTagNumber + " in " + time;
+	    
+	    try (FileWriter fw = new FileWriter("Server_Expected_Logs.txt", true);
+	         PrintWriter pw = new PrintWriter(fw)) {
+	        pw.println(logMessage);
+	    } catch (IOException e) {
+	        System.err.println("Could not write to server log file: " + e.getMessage());
+	    }
+	}
 
-    JSONObject jsonObject = new JSONObject();
-    try {
-        jsonObject.put("actionToExecute", "measure");
-        JSONArray tagsArray = new JSONArray();
+	public String getMeasurmentResponse(Anchor anchor, long executionTime, long scanTime, long safetyBuffer) {
+	    if (executionTime != this.currentCycleExecutionTime) {
+	        this.currentCycleExecutionTime = executionTime;
+	        
+	        long activeThreshold = System.currentTimeMillis() - 10000; 
+	        
+	        this.lockedAnchorList = this.listOfAnchors.values().stream()
+	            .filter(a -> a.getLastSeen() > activeThreshold)
+	            .collect(java.util.stream.Collectors.toList());
+	            
+	        this.lockedTagList = new ArrayList<>(this.listOfTags.values());
+	    }
 
-        // 2. STABLE INDEXING: Get the index from the ACTIVE snapshot
-        int anchorIndex = this.lockedAnchorList.indexOf(anchor);
+	    JSONObject jsonObject = new JSONObject();
+	    try {
+	        jsonObject.put("actionToExecute", "measure");
+	        JSONArray tagsArray = new JSONArray();
 
-        // If a new anchor registered mid-cycle, append it safely to the end
-        if (anchorIndex == -1) {
-            anchorIndex = this.lockedAnchorList.size(); 
-        }
+	        int anchorIndex = this.lockedAnchorList.indexOf(anchor);
 
-        int anchorCount = this.lockedAnchorList.size();
+	        if (anchorIndex == -1) {
+	            anchorIndex = this.lockedAnchorList.size(); 
+	        }
 
-        // 3. SCHEDULE GENERATION: Loop through the locked tag list
-        for (int i = 0; i < this.lockedTagList.size(); i++) {
-            Tag tag = this.lockedTagList.get(i);
-            if (tag == null) continue;
+	        int anchorCount = this.lockedAnchorList.size();
+	        long slotTime = scanTime + (2 * safetyBuffer);
 
-            // Math follows: time to measure = base + (TagIndex * AnchorCount * Slot) + (AnchorIndex * Slot)
-            long ellapsedTime = executionTime + ((long) i * anchorCount * scanTime);
-            long timeToMeasure = ellapsedTime + ((long) anchorIndex * scanTime);
+	        for (int i = 0; i < this.lockedTagList.size(); i++) {
+	            Tag tag = this.lockedTagList.get(i);
+	            if (tag == null) continue;
 
-            // NOTE: The 'if (timeToMeasure < now) continue;' check is removed here.
-            // This ensures the anchor receives the full schedule. The middleware 
-            // 'handleMeasureRequest' now handles late readings flexibly.
+	            long slotStart = executionTime + ((long) i * anchorCount * slotTime) + ((long) anchorIndex * slotTime);
+	            long timeToMeasure = slotStart + safetyBuffer;
 
-            JSONObject tagJson = new JSONObject();
-            tagJson.put("deviceID", tag.getDeviceName());
-            tagJson.put("whenToExecute", timeToMeasure);
-            tagsArray.put(tagJson);
-        }
+	            logServerExpectation(anchor, tag.getDeviceName(), timeToMeasure);
 
-        jsonObject.put("tags", tagsArray);
+	            JSONObject tagJson = new JSONObject();
+	            tagJson.put("deviceID", tag.getDeviceName());
+	            tagJson.put("whenToExecute", timeToMeasure);
+	            tagsArray.put(tagJson);
+	        }
 
-    } catch (org.json.JSONException e) {
-        e.printStackTrace();
-        return "{\"error\":\"Failed to create measurement response JSON.\"}";
-    }
-    return jsonObject.toString();
-}
+	        jsonObject.put("tags", tagsArray);
+
+	    } catch (JSONException e) {
+	        e.printStackTrace();
+	        return "{\"error\":\"Failed to create measurement response JSON.\"}";
+	    }
+	    return jsonObject.toString();
+	}
+	
 	/**
 	 * Generates a JSON string to force an anchor to register.
 	 * * @return A JSON string representing a register command.

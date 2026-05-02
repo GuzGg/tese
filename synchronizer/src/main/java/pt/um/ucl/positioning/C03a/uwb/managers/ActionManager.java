@@ -43,16 +43,15 @@ public class ActionManager {
 	private long minRoundTime;
 	
 	private String currentAction = "slow scan";
-	
-	/**
-	 * Default constructor that initializes the action periods with hard-coded values.
-	 */
-	public ActionManager() {
-		this.slowScanPeriod = 60000; // milliseconds
-		this.scanPeriod = 30000;    // milliseconds
-		this.scanInterval = 2000;    // milliseconds
-		this.scanTime = 300;       // milliseconds
-		this.minRoundTime = 1000; // milliseconds
+	private long safetyBuffer; 
+
+	public ActionManager(long slowScanPeriod, long scanPeriod, long scanInterval, long scanTime, long minRoundTime, long safetyBuffer) {
+	    this.slowScanPeriod = slowScanPeriod;
+	    this.scanPeriod = scanPeriod;
+	    this.scanInterval = scanInterval;
+	    this.scanTime = scanTime;
+	    this.minRoundTime = minRoundTime;
+	    this.safetyBuffer = safetyBuffer; 
 	}
 	
 	/**
@@ -137,18 +136,22 @@ public class ActionManager {
 	 */
 	public long getMeasurmentTime(int numberOfAnchor, int numberOfTags) {
 	    long now = System.currentTimeMillis();
-
+	
 	    if (now >= this.channelBusyUntil) {
-	        	        this.setActionStartingTime(now + this.getMinRoundTime()); 
-	        	        long cycleDuration = (long) (numberOfAnchor * numberOfTags * this.scanTime);
+	        this.setActionStartingTime(now + this.getMinRoundTime()); 
 	        
-	        // Lock the channel for the entire duration of this cycle
+	        long slotTime = this.scanTime + (2 * this.safetyBuffer);
+	        long cycleDuration = (long) (numberOfAnchor * numberOfTags * slotTime);
+	        
 	        this.setChannelBusyUntil(this.getActionStartingTime() + cycleDuration);
 	    }
-
+	
 	    return this.getActionStartingTime();
 	}
 	
+	public long getSafetyBuffer() {
+	    return this.safetyBuffer;
+	}
 	/**
 	 * Forces a time sync
 	 */

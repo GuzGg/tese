@@ -1,7 +1,6 @@
 package pt.um.ucl.positioning.C03a.uwb.measurements;
 
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.ArrayList;
 
 import org.json.JSONArray;
@@ -38,14 +37,14 @@ public class Measurement {
 	 * Constructs a new Measurement.
 	 *
 	 * @param tag The {@link Tag} that is the subject of this measurement.
-	 * @param measurmentStartTime The start time of the valid window fors this measurement.
+	 * @param measurmentStartTime The start time of the valid window for this measurement.
 	 * @param measurmentEndTime The end time of the valid window for this measurement.
 	 */
 	public Measurement (Tag tag, long measurmentStartTime, long measurmentEndTime) {
-	    this.tag = tag;
-	    this.setMeasurmentStartTime(measurmentStartTime);
-	    this.setMeasurmentEndTime(measurmentEndTime);
-	    this.readings = new CopyOnWriteArrayList<Reading>(); 
+		this.tag = tag;
+		this.setMeasurmentStartTime(measurmentStartTime);
+		this.setMeasurmentEndTime(measurmentEndTime);
+		this.readings = new ArrayList<Reading>();
 	}
 	
 	/**

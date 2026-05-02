@@ -36,6 +36,9 @@ public class Config {
     private final long amScanTime;
     
     private final long amMinRoundTime;
+    
+    // ---> NEW: The safety time buffer to pad measurement slots (milliseconds) <---
+    private final long amSafetyBuffer;
 
     // --- Export Flags ---
     /** Flag to enable or disable exporting data to the Database Queue. */
@@ -78,6 +81,9 @@ public class Config {
         this.amScanInterval = Long.parseLong(props.getProperty("am.scanInterval"));
         this.amScanTime = Long.parseLong(props.getProperty("am.scanTime"));
         this.amMinRoundTime = Long.parseLong(props.getProperty("am.minRoundTime"));
+        
+        // ---> NEW: Parse the safety buffer from properties, defaulting to 50ms if not provided <---
+        this.amSafetyBuffer = Long.parseLong(props.getProperty("am.safetyBuffer", "50"));
 
         // Export Flags
         this.exportToDbQ = Boolean.parseBoolean(props.getProperty("exportToDbQ"));
@@ -186,6 +192,14 @@ public class Config {
 	
 	public long getAmMinRoundTime() {
 		return amMinRoundTime;
+	}
+	
+	/**
+     * @return The safety buffer in milliseconds.
+     */
+	// ---> NEW: Getter for the safety buffer <---
+	public long getAmSafetyBuffer() {
+		return amSafetyBuffer;
 	}
 	
 	public boolean isWhitelistEnabled() {

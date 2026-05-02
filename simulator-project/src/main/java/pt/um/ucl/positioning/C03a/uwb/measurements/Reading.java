@@ -58,15 +58,15 @@ public class Reading {
 	 * Gets the measured distance.
 	 * @return The distance.
 	 */
-	public double getDistance() {
+	public double getDisctance() {
 		return distance;
 	}
 
 	/**
 	 * Sets the measured distance.
-	 * @param distance The new distance.
+	 * @param disctance The new distance.
 	 */
-	public void setDistance(double distance) {
+	public void setDisctance(double distance) {
 		this.distance = distance;
 	}
 
@@ -112,7 +112,7 @@ public class Reading {
 		
 		json.put("anchorID", this.getAnchor().getDeviceID());
 		json.put("timestamp", this.getTimestamp());
-		json.put("distance", this.getDistance());
+		json.put("distance", this.getDisctance());
 		json.put("channel", this.getChannel());
 		
 		return json;

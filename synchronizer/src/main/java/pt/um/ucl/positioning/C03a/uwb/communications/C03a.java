@@ -138,9 +138,14 @@ public class C03a extends HttpServlet {
 
 	    if (config.isEnableGeneralLogs()) logger.info("Configuration loaded. Initializing ActionManager and HikariCP...");
 
+	    // ---> NEW: Inject the safety buffer from the config into ActionManager <---
 	    this.actionManager = new ActionManager(
-	        this.config.getAmSlowScanPeriod(), this.config.getAmFastScanPeriod(),
-	        this.config.getAmScanInterval(), this.config.getAmScanTime(), this.config.getAmMinRoundTime()
+	        this.config.getAmSlowScanPeriod(), 
+	        this.config.getAmFastScanPeriod(),
+	        this.config.getAmScanInterval(), 
+	        this.config.getAmScanTime(), 
+	        this.config.getAmMinRoundTime(),
+	        this.config.getAmSafetyBuffer() 
 	    );
 
 	    HikariConfig hikariConfig = new HikariConfig();
@@ -376,6 +381,11 @@ public class C03a extends HttpServlet {
 
 		String id = jsonObj.getString("anchorID");
 
+		if (config.isWhitelistEnabled() && !this.synchronizer.whitelistOfAnchors.contains(id)) {
+            if (config.isEnableInputLogs()) logger.warning("UNAUTHORIZED Boot Attempt: " + id);
+            return "{\"error\":\"Unauthorized anchor ID.\"}";
+        }
+
 		Anchor anchor = new Anchor(id, LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
 				LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
 
@@ -407,6 +417,11 @@ public class C03a extends HttpServlet {
 	 */
 	private String handleMeasureRequest(JSONObject jsonObj) throws JSONException {
 	    String anchorID = jsonObj.getString("anchorID");
+	    
+	    if (config.isWhitelistEnabled() && !this.synchronizer.whitelistOfAnchors.contains(anchorID)) {
+             return "{\"error\":\"Unauthorized anchor ID.\"}";
+        }
+	    
 	    Anchor anchor = this.synchronizer.listOfAnchors.get(anchorID);
 	    if (anchor == null) return this.synchronizer.getRegisterResponse();
 	    anchor.setLastSeen(System.currentTimeMillis());
@@ -414,21 +429,25 @@ public class C03a extends HttpServlet {
 	    JSONArray tagArray = jsonObj.getJSONArray("tags");
 	    for (int i = 0; i < tagArray.length(); i++) {
 	        JSONObject obj = tagArray.getJSONObject(i);
+	        String tagID = obj.getString("tagID");
+	        
+	        if (config.isWhitelistEnabled() && !this.synchronizer.whitelistOfTags.contains(tagID)) {
+                continue;
+            }
+	        
 	        long executedAt = obj.getLong("executedAt");
-	        Tag tag = this.synchronizer.listOfTags.get(obj.getString("tagID"));
+	        Tag tag = this.synchronizer.listOfTags.get(tagID);
 
 	        if (tag != null) {
 	            tag.setLastSeen(System.currentTimeMillis());
 	            
-	            // Find the OLDEST round that fits the time AND doesn't have this anchor yet
 	            Measurement targetRound = tag.getMeasurements().stream()
 	                .filter(m -> !m.getSentForOutput())
 	                .filter(m -> !m.getAnchors().contains(anchor)) 
-	                .filter(m -> m.checkIfValid(executedAt)) // Uses the 5s window
+	                .filter(m -> m.checkIfValid(executedAt))
 	                .findFirst()
 	                .orElse(null);
 
-	            // NO FALLBACK: This prevents "Cycle Cross-Contamination"
 	            if (targetRound != null) {
 	                targetRound.getReadings().add(new Reading(anchor, obj.getDouble("distance"), executedAt, 5));
 	            }
@@ -437,6 +456,7 @@ public class C03a extends HttpServlet {
 	    startOutputProcess(new ArrayList<>(this.synchronizer.listOfTags.values()));
 	    return this.getResponse(anchor);
 	}
+	
 	/**
 	 * Handles scan reports ({@code /scanReport}).
 	 * <p>
@@ -453,6 +473,11 @@ public class C03a extends HttpServlet {
 			return "{\"error\":\"Missing or invalid 'anchorID' in scan request.\"}";
 		}
 		String anchorID = jsonObj.getString("anchorID");
+		
+		if (config.isWhitelistEnabled() && !this.synchronizer.whitelistOfAnchors.contains(anchorID)) {
+             return "{\"error\":\"Unauthorized anchor ID.\"}";
+        }
+		
 		Anchor anchor = this.synchronizer.listOfAnchors.get(anchorID);
 		if (anchor != null) {
 		    anchor.setLastSeen(LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
@@ -470,6 +495,10 @@ public class C03a extends HttpServlet {
 			JSONObject obj = tagArray.getJSONObject(i);
 			if (obj.has("tagID") && obj.get("tagID") instanceof String) {
 				String tagID = obj.getString("tagID");
+				
+				if (config.isWhitelistEnabled() && !this.synchronizer.whitelistOfTags.contains(tagID)) {
+                    continue; 
+                }
 
 				Tag tag = new Tag(tagID, LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
 						LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli());
@@ -500,21 +529,11 @@ public class C03a extends HttpServlet {
 	}
 
 	/**
-	 * Collects all completed, non-submitted measurements and dispatches them to the
-	 * {@link OutputManager} for asynchronous processing.
-	 * <p>
-	 * It clones the tag and measurement data to prevent race conditions and flags
-	 * the original measurement as {@code sentForOutput} to avoid duplicates.
+	 * Processes and dispatches measurement rounds that are either complete (all anchors reported)
+	 * or stale (timed out waiting for late anchors).
 	 *
-	 * @param tagList The list of all known tags to check for completed
-	 *                measurements.
+	 * @param tagList The list of all currently active tags to check.
 	 */
-/**
- * Processes and dispatches measurement rounds that are either complete (all anchors reported)
- * or stale (timed out waiting for late anchors).
- *
- * @param tagList The list of all currently active tags to check.
- */
 	private void startOutputProcess(List<Tag> tagList) {
 	    if (tagList == null || tagList.isEmpty()) return;
 	    List<Tag> tagsToSubmit = new ArrayList<>();
@@ -554,6 +573,7 @@ public class C03a extends HttpServlet {
 	        if (config.isEnableOutputLogs()) logger.info("Dispatched " + tagsToSubmit.size() + " round(s).");
 	    }
 	}
+	
 	/**
 	 * Determines the next action for an anchor and generates the appropriate JSON
 	 * response.
@@ -565,43 +585,44 @@ public class C03a extends HttpServlet {
 	 * @param anchor The anchor requesting the next action.
 	 * @return A JSON string representing the next action command.
 	 */
-private String getResponse(Anchor anchor) {
-    Action action = this.actionManager.nextAction();
-    String response = null;
-    
-    // 1. EVICTION: Clean up truly dead devices to keep the schedule tight
-    long evictionThreshold = System.currentTimeMillis() - (6 * config.getAmFastScanPeriod());
-    this.synchronizer.listOfTags.values().removeIf(t -> t.getLastSeen() < evictionThreshold);
-    this.synchronizer.listOfAnchors.values().removeIf(t -> t.getLastSeen() < evictionThreshold);
-    
-    List<Tag> tagList = new ArrayList<>(this.synchronizer.listOfTags.values());
-
-    if (this.synchronizer.listOfTags.isEmpty() || this.synchronizer.listOfAnchors.isEmpty()) {
-        response = this.synchronizer.getSlowScanResponse(this.actionManager.getSlowScanTime());
-    } else if (action == Action.FAST_SCAN) {
-        response = this.synchronizer.getFastScanResponse(this.actionManager.getFastScanTime());
-    } else {
-    	this.actionManager.forceTimeSync();
-        // Calculate the FUTURE start time
-        long nextExecutionTime = this.actionManager.getMeasurmentTime(
-            this.synchronizer.listOfAnchors.size(), this.synchronizer.listOfTags.size());
-
-        response = this.synchronizer.getMeasurmentResponse(anchor, nextExecutionTime, this.actionManager.getScanTime());
-
-        long now = System.currentTimeMillis();
-        // PATIENCE: Wait 10s before considering a round "dead"
-        boolean isStale = tagList.stream().anyMatch(tag -> tag.getMeasurements().stream()
-            .anyMatch(m -> now > m.getMeasurmentEndTime() + 10000)); 
-
-        if (tagList.stream().anyMatch(t -> t.getMeasurements().isEmpty()) || isStale) {
-            if (isStale) startOutputProcess(tagList);
-            // ALIGNMENT: Create memory bucket at nextExecutionTime, NOT 'now'
-            this.synchronizer.addMeasurementRound(nextExecutionTime, this.actionManager.getChannelBusyUntil());
-        }
-    }
-
-    return (response != null) ? response : "{\"error\":\"Internal server error: Null response generated.\"}";
-}
+	private String getResponse(Anchor anchor) {
+	    Action action = this.actionManager.nextAction();
+	    String response = null;
+	    
+	    // 1. EVICTION: Clean up truly dead devices to keep the schedule tight
+	    long evictionThreshold = System.currentTimeMillis() - (6 * config.getAmFastScanPeriod());
+	    this.synchronizer.listOfTags.values().removeIf(t -> t.getLastSeen() < evictionThreshold);
+	    this.synchronizer.listOfAnchors.values().removeIf(t -> t.getLastSeen() < evictionThreshold);
+	    
+	    List<Tag> tagList = new ArrayList<>(this.synchronizer.listOfTags.values());
+	
+	    if (this.synchronizer.listOfTags.isEmpty() || this.synchronizer.listOfAnchors.isEmpty()) {
+	        response = this.synchronizer.getSlowScanResponse(this.actionManager.getSlowScanTime());
+	    } else if (action == Action.FAST_SCAN) {
+	        response = this.synchronizer.getFastScanResponse(this.actionManager.getFastScanTime());
+	    } else {
+	    	this.actionManager.forceTimeSync();
+	        // Calculate the FUTURE start time
+	        long nextExecutionTime = this.actionManager.getMeasurmentTime(
+	            this.synchronizer.listOfAnchors.size(), this.synchronizer.listOfTags.size());
+	
+	        // ---> NEW: Pass the safety buffer from config to pad the measurement slots <---
+	        response = this.synchronizer.getMeasurmentResponse(anchor, nextExecutionTime, this.actionManager.getScanTime(), this.config.getAmSafetyBuffer());
+	
+	        long now = System.currentTimeMillis();
+	        // PATIENCE: Wait 10s before considering a round "dead"
+	        boolean isStale = tagList.stream().anyMatch(tag -> tag.getMeasurements().stream()
+	            .anyMatch(m -> now > m.getMeasurmentEndTime() + 10000)); 
+	
+	        if (tagList.stream().anyMatch(t -> t.getMeasurements().isEmpty()) || isStale) {
+	            if (isStale) startOutputProcess(tagList);
+	            // ALIGNMENT: Create memory bucket at nextExecutionTime, NOT 'now'
+	            this.synchronizer.addMeasurementRound(nextExecutionTime, this.actionManager.getChannelBusyUntil());
+	        }
+	    }
+	
+	    return (response != null) ? response : "{\"error\":\"Internal server error: Null response generated.\"}";
+	}
 
 	/**
 	 * Utility method to send a standardized JSON error response to the client.

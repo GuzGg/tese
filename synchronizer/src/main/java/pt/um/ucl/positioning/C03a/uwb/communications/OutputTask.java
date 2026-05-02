@@ -6,6 +6,7 @@ import pt.um.ucl.positioning.C03a.uwb.config.Config;
 import pt.um.ucl.positioning.C03a.uwb.database.MeasurementsDatabaseLogger;
 import org.json.JSONObject;
 
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
@@ -116,6 +117,7 @@ public class OutputTask implements Runnable {
 		}
 
 		if (this.config.isExportToPeQ()) {
+			HttpURLConnection connection = null;
 			try {
 				JSONObject payloadJson = measurement.toJson();
 				payloadJson.put("estimateAccessToken", this.config.getPeToken());
@@ -124,7 +126,7 @@ public class OutputTask implements Runnable {
 				byte[] postData = jsonString.getBytes(StandardCharsets.UTF_8);
 
 				URL url = new URI(config.getPeUrl()).toURL();
-				HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+				connection = (HttpURLConnection) url.openConnection();
 				connection.setRequestMethod("POST");
 				connection.setRequestProperty("Content-Type", "application/json");
 				connection.setRequestProperty("Content-Length", String.valueOf(postData.length));
@@ -135,6 +137,11 @@ public class OutputTask implements Runnable {
 				}
 
 				int code = connection.getResponseCode();
+				
+				try (InputStream is = code >= 400 ? connection.getErrorStream() : connection.getInputStream()) {
+                    if (is != null) is.readAllBytes(); 
+                }
+
 				if (this.enableLogs) {
 					System.out.println("Tag: " + tag.getDeviceName() + " | Sending JSON:\n" + payloadJson.toString(4));
 					System.out.println("Tag: " + tag.getDeviceName() + " | Estimator Response: " + code);
@@ -143,6 +150,10 @@ public class OutputTask implements Runnable {
 			} catch (Exception httpException) {
 				if (this.enableLogs)
 					System.err.println("HTTP Error for tag " + tag.getDeviceName() + ": " + httpException.getMessage());
+			} finally {
+				if (connection != null) {
+					connection.disconnect();
+				}
 			}
 		}
 	}

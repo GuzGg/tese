@@ -232,15 +232,16 @@ public class MeasurementsDatabaseLogger {
             VALUES (?, ?, ?, ?) 
             """;
         
-        try (Connection conn = dataSource.getConnection(); // Correctly uses DataSource
+        try (Connection conn = dataSource.getConnection(); 
              PreparedStatement stmt = conn.prepareStatement(sql)) {
         	
         	for (Reading reading: readings) {
         		Anchor anchor = reading.getAnchor();
                 stmt.setInt(1, measurementId);
-                stmt.setLong(2, reading.getTimestamp()); // Use the individual reading's timestamp
+                stmt.setLong(2, reading.getTimestamp()); 
                 stmt.setInt(3, anchor.getDeviceID());
-                stmt.setDouble(4, reading.getDisctance()); 
+                
+                stmt.setDouble(4, reading.getDistance()); 
                 
                 stmt.addBatch();
         	}
