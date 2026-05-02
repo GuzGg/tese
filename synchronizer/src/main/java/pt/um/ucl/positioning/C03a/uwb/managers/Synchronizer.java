@@ -1,9 +1,14 @@
 package pt.um.ucl.positioning.C03a.uwb.managers;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import pt.um.ucl.positioning.C03a.uwb.devices.Anchor;
 import pt.um.ucl.positioning.C03a.uwb.devices.Tag;
@@ -29,7 +34,14 @@ public class Synchronizer {
 	public Map<String, Tag> listOfTags;
 	/** A map of known anchors, keyed by their device name (ID). */
 	public Map<String, Anchor> listOfAnchors;
+	/** A set of known whitelisted tags, keyed by their device name (ID). */
+	public Set<String> whitelistOfTags;
+	/** A set of known whitelisted anchors, keyed by their device name (ID). */
+	public Set<String> whitelistOfAnchors;
 	
+	private List<Anchor> lockedAnchorList = new ArrayList<>();
+	private List<Tag> lockedTagList = new ArrayList<>();
+	private long currentCycleExecutionTime = 0;
 	/**
 	 * Constructs a new Synchronizer with pre-populated lists of tags and anchors.
 	 *
@@ -48,8 +60,10 @@ public class Synchronizer {
 	 * Initializes empty maps for tags and anchors.
 	 */
 	public Synchronizer() {
-		this.listOfTags = new HashMap<String, Tag>();
-		this.listOfAnchors = new HashMap<String, Anchor>();
+		this.listOfTags = new LinkedHashMap<String, Tag>();
+		this.listOfAnchors = new LinkedHashMap<String, Anchor>();
+		this.whitelistOfTags = new HashSet<String>();
+		this.whitelistOfAnchors = new HashSet<String>();
 	}
 	
 	/**
@@ -116,17 +130,17 @@ public class Synchronizer {
 	 * @param endTime The end time for the new measurement round.
 	 */
 	public synchronized void addMeasurementRound(long startTime, long endTime) {
-	    long bufferMillis = 30000; // 30-second safety buffer
+	    long bufferMillis = 5000; // Increased to 5s to match Measurement.java
 	    for (Tag tag : listOfTags.values()) {
 	        if (tag == null) continue;
 	        
-	        // LIMIT HISTORY: Keep only the 3 most recent rounds to prevent memory leaks
 	        List<Measurement> measurements = tag.getMeasurements();
-	        while (measurements.size() > 2) {
+	        // Prevent list from growing too large
+	        while (measurements.size() > 10) {
 	            measurements.remove(0); 
 	        }
 	        
-	        // Use broad windows to accommodate clock jitter
+	        // Window now perfectly encapsulates the hardware cycle
 	        measurements.add(new Measurement(tag, startTime - bufferMillis, endTime + bufferMillis));
 	    }
 	}
@@ -181,46 +195,63 @@ public class Synchronizer {
 	 * @return A JSON string representing the measure command, including a
 	 * list of tags and their scheduled execution times.
 	 */
-	public String getMeasurmentResponse( Anchor anchor, long executionTime, long scanTime) {
-	    JSONObject jsonObject = new JSONObject();
-	    try {
-	        jsonObject.put("actionToExecute", "measure");
+public String getMeasurmentResponse(Anchor anchor, long executionTime, long scanTime) {
+    // 1. CYCLE LOCKING & ACTIVE FILTER: If executionTime changed, a new cycle has begun.
+    // We snapshot only the anchors seen in the last 10 seconds to keep the schedule compact.
+    if (executionTime != this.currentCycleExecutionTime) {
+        this.currentCycleExecutionTime = executionTime;
+        
+        long activeThreshold = System.currentTimeMillis() - 10000; // 10-second activity window
+        
+        this.lockedAnchorList = this.listOfAnchors.values().stream()
+            .filter(a -> a.getLastSeen() > activeThreshold)
+            .collect(java.util.stream.Collectors.toList());
+            
+        this.lockedTagList = new ArrayList<>(this.listOfTags.values());
+    }
 
-	        JSONArray tagsArray = new JSONArray();
-	        
-	        List<Anchor> anchorList = new ArrayList<>(this.listOfAnchors.values());
-	        List<Tag> tagList = new ArrayList<>(this.listOfTags.values());
-	        
-	        int anchorIndex = anchorList.indexOf(anchor);
+    JSONObject jsonObject = new JSONObject();
+    try {
+        jsonObject.put("actionToExecute", "measure");
+        JSONArray tagsArray = new JSONArray();
 
-	        for (Tag tag : tagList) {
-	            // Null check added here to prevent NullPointerException
-	            if (tag == null) {
-	                System.err.println("Null tag found in tag list. Skipping.");
-	                continue; // Skip to the next iteration
-	            }
-	            
-	            // Calculate the specific time for this anchor to measure this tag
-	            long ellapsedTime = executionTime + tagList.indexOf(tag) * anchorList.size() * scanTime;
-	            long timeToMeasure = ellapsedTime + anchorIndex * scanTime;
-	            
-	            // Create a JSONObject for each tag
-	            JSONObject tagJson = new JSONObject();
-	            tagJson.put("deviceID", tag.getDeviceName());
-	            tagJson.put("whenToExecute", timeToMeasure);
+        // 2. STABLE INDEXING: Get the index from the ACTIVE snapshot
+        int anchorIndex = this.lockedAnchorList.indexOf(anchor);
 
-	        tagsArray.put(tagJson);
-	        }
+        // If a new anchor registered mid-cycle, append it safely to the end
+        if (anchorIndex == -1) {
+            anchorIndex = this.lockedAnchorList.size(); 
+        }
 
-	        jsonObject.put("tags", tagsArray);
+        int anchorCount = this.lockedAnchorList.size();
 
-	    } catch (org.json.JSONException e) {
-	        e.printStackTrace();
-	        return "{\"error\":\"Failed to create measurement response JSON.\"}";
-	    }
-	    return jsonObject.toString();
-	}
-	
+        // 3. SCHEDULE GENERATION: Loop through the locked tag list
+        for (int i = 0; i < this.lockedTagList.size(); i++) {
+            Tag tag = this.lockedTagList.get(i);
+            if (tag == null) continue;
+
+            // Math follows: time to measure = base + (TagIndex * AnchorCount * Slot) + (AnchorIndex * Slot)
+            long ellapsedTime = executionTime + ((long) i * anchorCount * scanTime);
+            long timeToMeasure = ellapsedTime + ((long) anchorIndex * scanTime);
+
+            // NOTE: The 'if (timeToMeasure < now) continue;' check is removed here.
+            // This ensures the anchor receives the full schedule. The middleware 
+            // 'handleMeasureRequest' now handles late readings flexibly.
+
+            JSONObject tagJson = new JSONObject();
+            tagJson.put("deviceID", tag.getDeviceName());
+            tagJson.put("whenToExecute", timeToMeasure);
+            tagsArray.put(tagJson);
+        }
+
+        jsonObject.put("tags", tagsArray);
+
+    } catch (org.json.JSONException e) {
+        e.printStackTrace();
+        return "{\"error\":\"Failed to create measurement response JSON.\"}";
+    }
+    return jsonObject.toString();
+}
 	/**
 	 * Generates a JSON string to force an anchor to register.
 	 * * @return A JSON string representing a register command.

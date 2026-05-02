@@ -40,6 +40,10 @@ public class ActionManager {
 	/** Timestamp when the current action round started (milliseconds). */
 	private long actionStartingTime = LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
 	
+	private long minRoundTime;
+	
+	private String currentAction = "slow scan";
+	
 	/**
 	 * Default constructor that initializes the action periods with hard-coded values.
 	 */
@@ -48,6 +52,7 @@ public class ActionManager {
 		this.scanPeriod = 30000;    // milliseconds
 		this.scanInterval = 2000;    // milliseconds
 		this.scanTime = 300;       // milliseconds
+		this.minRoundTime = 1000; // milliseconds
 	}
 	
 	/**
@@ -58,11 +63,12 @@ public class ActionManager {
 	 * @param scanInterval The time between consecutive scans in milliseconds.
 	 * @param scanTime The duration of a single scan operation in milliseconds.
 	 */
-	public ActionManager(long slowScanPeriod, long scanPeriod, long scanInterval, long scanTime) {
+	public ActionManager(long slowScanPeriod, long scanPeriod, long scanInterval, long scanTime, long minRoundTime) {
 		this.slowScanPeriod = slowScanPeriod;
 		this.scanPeriod = scanPeriod;
 		this.scanInterval = scanInterval;
 		this.scanTime = scanTime;
+		this.minRoundTime = minRoundTime;
 	}
 	
 	/**
@@ -70,42 +76,56 @@ public class ActionManager {
 	 *
 	 * @return The next action, which can be SLOW_SCAN, FAST_SCAN, or MEASUREMENT.
 	 */
-	public Action nextAction() {
-		long now = LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
-		long lastScanMillis = this.lastScan.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
-		
-		if((now - lastScanMillis) > this.scanPeriod) {	
-			this.lastScan = LocalDateTime.now();
-			return Action.FAST_SCAN;
-		} 
-		else if((now - lastScanMillis) < this.scanInterval) {
-			return Action.FAST_SCAN;
+		public Action nextAction() {
+			long now = System.currentTimeMillis();
+
+			// 1. Lock the channel for ALL action types, not just measurements.
+			// If an action is currently running, do not interrupt it!
+			if (now < this.channelBusyUntil) {
+			    if ("measure".equals(this.currentAction)) return Action.MEASUREMENT;
+			    if ("fast scan".equals(this.currentAction)) return Action.FAST_SCAN;
+			    if ("slow scan".equals(this.currentAction)) return Action.SLOW_SCAN;
+			}
+
+			long lastScanMillis = this.lastScan.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+			
+			// 2. Trigger a scan EXACTLY ONCE when the period expires
+			if((now - lastScanMillis) > this.scanPeriod) {	
+				this.lastScan = LocalDateTime.now();
+				this.setCurrentAction("fast scan");
+				return Action.FAST_SCAN;
+			} 
+			
+			// 3. Otherwise, safely run measurements
+			this.setCurrentAction("measure");
+			return Action.MEASUREMENT;
 		}
 		
-		return Action.MEASUREMENT;
-	}
-	
-	/**
-	 * Calculates the time for the next slow scan.
-	 * It also updates the 'channelBusyUntil' time.
-	 *
-	 * @return The time in milliseconds for the next slow scan action to be scheduled.
-	 */
-	public long getSlowScanTime(){
-		this.setChannelBusyUntil(this.getChannelBusyUntil() + (this.slowScanPeriod + this.scanTime));
-		return LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() + this.slowScanPeriod/this.scanTime;
-	}
-	
-	/**
-	 * Calculates the time for the next fast scan.
-	 * It also updates the 'channelBusyUntil' time.
-	 *
-	 * @return The time in milliseconds for the next fast scan action to be scheduled.
-	 */
-	public long getFastScanTime() {
-		this.setChannelBusyUntil(this.getChannelBusyUntil() + this.scanTime);
-		return LocalDateTime.now().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() + this.scanPeriod/this.scanTime;
-	}
+		public long getFastScanTime() {
+		    long now = System.currentTimeMillis();
+
+		    // Synchronize fast scans just like measurements!
+		    if (now >= this.channelBusyUntil) {
+		        // Give anchors the full minRoundTime (1 second) to receive the command safely
+		        this.setActionStartingTime(now + this.getMinRoundTime()); 
+		        // Lock the channel for the duration of the scan
+		        this.setChannelBusyUntil(this.getActionStartingTime() + this.scanTime);
+		    }
+		    
+		    return this.getActionStartingTime();
+		}
+
+		public long getSlowScanTime(){
+		    long now = System.currentTimeMillis();
+
+		    if (now >= this.channelBusyUntil) {
+		        this.setActionStartingTime(now + this.getMinRoundTime());
+		        // Slow scans take longer, lock the channel appropriately
+		        this.setChannelBusyUntil(this.getActionStartingTime() + this.slowScanPeriod);
+		    }
+		    
+		    return this.getActionStartingTime();
+		}
 	
 	/**
 	 * Calculates the measurement time for the next round based on the number of anchors and tags.
@@ -117,22 +137,15 @@ public class ActionManager {
 	 */
 	public long getMeasurmentTime(int numberOfAnchor, int numberOfTags) {
 	    long now = System.currentTimeMillis();
-	    long lastScanMillis = this.lastScan.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
 
-	    if (this.channelBusyUntil < now ||this.channelBusyUntil > now + 1200) {
-	        this.setChannelBusyUntil(now + 2000); 
+	    if (now >= this.channelBusyUntil) {
+	        	        this.setActionStartingTime(now + this.getMinRoundTime()); 
+	        	        long cycleDuration = (long) (numberOfAnchor * numberOfTags * this.scanTime);
+	        
+	        // Lock the channel for the entire duration of this cycle
+	        this.setChannelBusyUntil(this.getActionStartingTime() + cycleDuration);
 	    }
 
-	    if ((now - lastScanMillis) > this.scanPeriod) {
-	        this.setActionStartingTime(this.getChannelBusyUntil());		
-	        
-	        long roundDuration = (long) (numberOfAnchor * numberOfTags * this.scanTime);
-	        this.setChannelBusyUntil(this.getChannelBusyUntil() + roundDuration);
-	        
-	        this.lastScan = LocalDateTime.now();
-	    } else {
-	        this.setActionStartingTime( this.getActionStartingTime() + this.scanTime);		
-	    }
 	    return this.getActionStartingTime();
 	}
 	
@@ -191,5 +204,17 @@ public class ActionManager {
 	 */
 	public long getScanTime() {
 		return this.scanTime;
+	}
+	
+	public void setCurrentAction(String action) {
+		this.currentAction = action;
+	}
+	
+	public String getCurrentAction() {
+		return this.currentAction;
+	}
+	
+	public long getMinRoundTime() {
+		return this.minRoundTime;
 	}
 }

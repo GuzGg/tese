@@ -34,6 +34,8 @@ public class Config {
     private final long amScanInterval;
     /** The duration of a single scan operation (milliseconds). */
     private final long amScanTime;
+    
+    private final long amMinRoundTime;
 
     // --- Export Flags ---
     /** Flag to enable or disable exporting data to the Database Queue. */
@@ -55,6 +57,8 @@ public class Config {
     
     private final int dbMaxRetries;
     private final int dbRetryDelay;
+    
+    private final boolean secWhitelist;
 
     /**
      * Constructs a new Config object by parsing properties from a {@link Properties} object.
@@ -73,6 +77,7 @@ public class Config {
         this.amFastScanPeriod = Long.parseLong(props.getProperty("am.fastScanPeriod"));
         this.amScanInterval = Long.parseLong(props.getProperty("am.scanInterval"));
         this.amScanTime = Long.parseLong(props.getProperty("am.scanTime"));
+        this.amMinRoundTime = Long.parseLong(props.getProperty("am.minRoundTime"));
 
         // Export Flags
         this.exportToDbQ = Boolean.parseBoolean(props.getProperty("exportToDbQ"));
@@ -89,6 +94,8 @@ public class Config {
         
         this.dbMaxRetries = Integer.parseInt(props.getProperty("db.maxRetries", "5"));
         this.dbRetryDelay = Integer.parseInt(props.getProperty("db.retryDelay", "10000"));
+        
+        this.secWhitelist = Boolean.parseBoolean(props.getProperty("sec.whitelist", "false"));
     }
 
     // --- Public Getters ---
@@ -176,4 +183,12 @@ public class Config {
 	
 	public int getDbMaxRetries() { return dbMaxRetries; }
 	public int getDbRetryDelay() { return dbRetryDelay; }
+	
+	public long getAmMinRoundTime() {
+		return amMinRoundTime;
+	}
+	
+	public boolean isWhitelistEnabled() {
+		return secWhitelist;
+	}
 }

@@ -1,6 +1,7 @@
 package pt.um.ucl.positioning.C03a.uwb.communications;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintWriter;
@@ -9,6 +10,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Properties;
 import java.util.logging.Logger;
@@ -20,6 +22,9 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 
@@ -135,7 +140,7 @@ public class C03a extends HttpServlet {
 
 	    this.actionManager = new ActionManager(
 	        this.config.getAmSlowScanPeriod(), this.config.getAmFastScanPeriod(),
-	        this.config.getAmScanInterval(), this.config.getAmScanTime()
+	        this.config.getAmScanInterval(), this.config.getAmScanTime(), this.config.getAmMinRoundTime()
 	    );
 
 	    HikariConfig hikariConfig = new HikariConfig();
@@ -144,7 +149,6 @@ public class C03a extends HttpServlet {
 	    hikariConfig.setPassword(this.config.getDbPassword());
 	    hikariConfig.setDriverClassName("org.mariadb.jdbc.Driver");
 
-	    // Performance tuning for UWB traffic
 	    hikariConfig.setMaximumPoolSize(10); 
 	    hikariConfig.addDataSourceProperty("cachePrepStmts", "true");
 	    hikariConfig.addDataSourceProperty("prepStmtCacheSize", "250");
@@ -161,6 +165,36 @@ public class C03a extends HttpServlet {
 	    } catch (Exception e) {
 	        if (config.isEnableGeneralLogs()) logger.log(Level.SEVERE, "Failed to initialize sub-components", e);
 	        throw new ServletException(e);
+	    }
+	    
+	    if(config.isWhitelistEnabled()) {
+	    	ObjectMapper mapper = new ObjectMapper();
+	        
+
+	        try {
+	            JsonNode rootNode = mapper.readTree(new File("/WEB-INF/whitelist.json"));
+
+	            JsonNode tagsNode = rootNode.get("Tags");
+	            if (tagsNode != null && tagsNode.isArray()) {
+	                for (JsonNode node : tagsNode) {
+	                	this.synchronizer.whitelistOfTags.add(node.get("deviceId").asText());
+	                }
+	            }
+
+	            JsonNode anchorsNode = rootNode.get("Anchors");
+	            if (anchorsNode != null && anchorsNode.isArray()) {
+	                for (JsonNode node : anchorsNode) {
+	                	this.synchronizer.whitelistOfAnchors.add(node.get("deviceId").asText());
+	                }
+	            }
+
+	            // Output the results to verify
+	            if (config.isEnableGeneralLogs()) logger.info("Tags Set: " + this.synchronizer.whitelistOfTags);
+	            if (config.isEnableGeneralLogs()) logger.info("Anchors Set: " + this.synchronizer.whitelistOfAnchors);
+
+	        } catch (Exception e) {
+	        	 if (config.isEnableGeneralLogs()) logger.info("Error reading or parsing the JSON file: " + e.getMessage());
+	        }
 	    }
 	    
 	    if (config.isEnableGeneralLogs()) logger.info("C30a Servlet "+version+" is ready.");
@@ -231,7 +265,8 @@ public class C03a extends HttpServlet {
 		        writer.println("Active Connections: " + pool.getActiveConnections());
 		        writer.println("Threads Awaiting:   " + pool.getThreadsAwaitingConnection());
 		    }
-		    
+	        writer.println("--- Current State ---");
+		    writer.println("Action: " + actionManager.getCurrentAction());
 		    writer.close();
 		} else {
 			response.sendError(400, "Unknown request.");
@@ -371,47 +406,37 @@ public class C03a extends HttpServlet {
 	 * @throws JSONException If the JSON is missing required fields.
 	 */
 	private String handleMeasureRequest(JSONObject jsonObj) throws JSONException {
-        String anchorID = jsonObj.getString("anchorID");
-        Anchor anchor = this.synchronizer.listOfAnchors.get(anchorID);
-        if (anchor == null) return this.synchronizer.getRegisterResponse();
-        anchor.setLastSeen(System.currentTimeMillis());
+	    String anchorID = jsonObj.getString("anchorID");
+	    Anchor anchor = this.synchronizer.listOfAnchors.get(anchorID);
+	    if (anchor == null) return this.synchronizer.getRegisterResponse();
+	    anchor.setLastSeen(System.currentTimeMillis());
 
-        JSONArray tagArray = jsonObj.getJSONArray("tags");
-        for (int i = 0; i < tagArray.length(); i++) {
-            JSONObject obj = tagArray.getJSONObject(i);
-            String tagID = obj.getString("tagID");
-            double distance = obj.getDouble("distance");
-            long executedAt = obj.getLong("executedAt");
+	    JSONArray tagArray = jsonObj.getJSONArray("tags");
+	    for (int i = 0; i < tagArray.length(); i++) {
+	        JSONObject obj = tagArray.getJSONObject(i);
+	        long executedAt = obj.getLong("executedAt");
+	        Tag tag = this.synchronizer.listOfTags.get(obj.getString("tagID"));
 
-            Tag tag = this.synchronizer.listOfTags.get(tagID);
-            if (tag != null) {
-                tag.setLastSeen(System.currentTimeMillis());
-                
-                // Flexible window search: Accept delayed reports
-                Measurement targetRound = tag.getMeasurements().stream()
-                    .filter(m -> !m.getSentForOutput() && m.checkIfValid(executedAt))
-                    .findFirst()
-                    .orElse(null);
+	        if (tag != null) {
+	            tag.setLastSeen(System.currentTimeMillis());
+	            
+	            // Find the OLDEST round that fits the time AND doesn't have this anchor yet
+	            Measurement targetRound = tag.getMeasurements().stream()
+	                .filter(m -> !m.getSentForOutput())
+	                .filter(m -> !m.getAnchors().contains(anchor)) 
+	                .filter(m -> m.checkIfValid(executedAt)) // Uses the 5s window
+	                .findFirst()
+	                .orElse(null);
 
-                // Fallback to latest un-sent round
-                if (targetRound == null && !tag.getMeasurements().isEmpty()) {
-                    targetRound = tag.getMeasurements().stream()
-                        .filter(m -> !m.getSentForOutput())
-                        .reduce((first, second) -> second).orElse(null);
-                }
-
-                if (targetRound != null && !targetRound.getAnchors().contains(anchor)) {
-                    targetRound.getReadings().add(new Reading(anchor, distance, executedAt, 5));
-                }
-            }
-        }
-
-        // Independent output processing: Handled per-tag inside startOutputProcess
-        startOutputProcess(new ArrayList<>(this.synchronizer.listOfTags.values()));
-
-        return this.getResponse(anchor);
-    }
-
+	            // NO FALLBACK: This prevents "Cycle Cross-Contamination"
+	            if (targetRound != null) {
+	                targetRound.getReadings().add(new Reading(anchor, obj.getDouble("distance"), executedAt, 5));
+	            }
+	        }
+	    }
+	    startOutputProcess(new ArrayList<>(this.synchronizer.listOfTags.values()));
+	    return this.getResponse(anchor);
+	}
 	/**
 	 * Handles scan reports ({@code /scanReport}).
 	 * <p>
@@ -484,39 +509,51 @@ public class C03a extends HttpServlet {
 	 * @param tagList The list of all known tags to check for completed
 	 *                measurements.
 	 */
+/**
+ * Processes and dispatches measurement rounds that are either complete (all anchors reported)
+ * or stale (timed out waiting for late anchors).
+ *
+ * @param tagList The list of all currently active tags to check.
+ */
 	private void startOutputProcess(List<Tag> tagList) {
-        if (tagList == null || tagList.isEmpty()) return;
-        List<Tag> tagsToSubmit = new ArrayList<>();
-        int anchorCount = this.synchronizer.listOfAnchors.size();
+	    if (tagList == null || tagList.isEmpty()) return;
+	    List<Tag> tagsToSubmit = new ArrayList<>();
+	    int anchorCount = this.synchronizer.listOfAnchors.size();
+	    long now = System.currentTimeMillis();
 
-        for (Tag tag : tagList) {
-            if (tag != null && !tag.getMeasurements().isEmpty()) {
-                Measurement m = tag.getMeasurements().getLast();
+	    for (Tag tag : tagList) {
+	        if (tag != null && !tag.getMeasurements().isEmpty()) {
+	            Iterator<Measurement> iterator = tag.getMeasurements().iterator();
+	            
+	            while (iterator.hasNext()) {
+	                Measurement m = iterator.next();
+	                boolean isComplete = m.getReadings().size() >= anchorCount;
+	                // Wait 10s after cycle end for Wi-Fi lag
+	                boolean isStale = now > m.getMeasurmentEndTime() + 10000; 
 
-                boolean isComplete = m.getReadings().size() >= anchorCount;
+					if (!m.getSentForOutput() && !m.getReadings().isEmpty() && (isComplete || isStale)) {
+	                    m.setSentForOutput(true);
+	                    Tag tagClone = new Tag(tag.getDeviceName(), tag.getinitializedAt(), tag.getLastSeen());
+	                    tagClone.setDeviceID(tag.getDeviceID());
+	                    tagClone.getMeasurements().add(m); 
+	                    tagsToSubmit.add(tagClone);
+	                }
 
-                if (!m.getSentForOutput() && !m.getReadings().isEmpty() && isComplete) {
-                    m.setSentForOutput(true);
+	                // Cleanup processed or dead rounds
+	                if (m.getSentForOutput() || isStale) {
+	                    iterator.remove();
+	                }
+	            }
+	            // CRITICAL: Removed "needsNextRound" creation from here! 
+	            // Creation is now handled ONLY in getResponse.
+	        }
+	    }
 
-                    Tag tagClone = new Tag(tag.getDeviceName(), tag.getinitializedAt(), tag.getLastSeen());
-                    tagClone.setDeviceID(tag.getDeviceID());
-                    tagClone.getMeasurements().add(m); 
-                    tagsToSubmit.add(tagClone);
-
-                    // Trigger next round for THIS tag specifically
-                    long nextStart = this.actionManager.getActionStartingTime();
-                    long nextEnd = this.actionManager.getChannelBusyUntil();
-                    tag.getMeasurements().add(new Measurement(tag, nextStart - 30000, nextEnd + 30000));
-                }
-            }
-        }
-
-        if (!tagsToSubmit.isEmpty()) {
-            this.outputManager.submitTagBatch(tagsToSubmit);
-            if (config.isEnableOutputLogs()) logger.info("Dispatched " + tagsToSubmit.size() + " completed tag(s).");
-        }
-    }
-	
+	    if (!tagsToSubmit.isEmpty()) {
+	        this.outputManager.submitTagBatch(tagsToSubmit);
+	        if (config.isEnableOutputLogs()) logger.info("Dispatched " + tagsToSubmit.size() + " round(s).");
+	    }
+	}
 	/**
 	 * Determines the next action for an anchor and generates the appropriate JSON
 	 * response.
@@ -528,45 +565,43 @@ public class C03a extends HttpServlet {
 	 * @param anchor The anchor requesting the next action.
 	 * @return A JSON string representing the next action command.
 	 */
-	private String getResponse(Anchor anchor) {
-		Action action = this.actionManager.nextAction();
-		String response = null;
+private String getResponse(Anchor anchor) {
+    Action action = this.actionManager.nextAction();
+    String response = null;
+    
+    // 1. EVICTION: Clean up truly dead devices to keep the schedule tight
+    long evictionThreshold = System.currentTimeMillis() - (6 * config.getAmFastScanPeriod());
+    this.synchronizer.listOfTags.values().removeIf(t -> t.getLastSeen() < evictionThreshold);
+    this.synchronizer.listOfAnchors.values().removeIf(t -> t.getLastSeen() < evictionThreshold);
+    
+    List<Tag> tagList = new ArrayList<>(this.synchronizer.listOfTags.values());
 
-		List<Tag> tagList = new ArrayList<>(this.synchronizer.listOfTags.values());
+    if (this.synchronizer.listOfTags.isEmpty() || this.synchronizer.listOfAnchors.isEmpty()) {
+        response = this.synchronizer.getSlowScanResponse(this.actionManager.getSlowScanTime());
+    } else if (action == Action.FAST_SCAN) {
+        response = this.synchronizer.getFastScanResponse(this.actionManager.getFastScanTime());
+    } else {
+    	this.actionManager.forceTimeSync();
+        // Calculate the FUTURE start time
+        long nextExecutionTime = this.actionManager.getMeasurmentTime(
+            this.synchronizer.listOfAnchors.size(), this.synchronizer.listOfTags.size());
 
-		if (this.synchronizer.listOfTags.isEmpty()) {
-			response = this.synchronizer.getSlowScanResponse(this.actionManager.getSlowScanTime());
-		} else if (action == Action.FAST_SCAN) {
-			response = this.synchronizer.getFastScanResponse(this.actionManager.getFastScanTime());
-		} else {
-			this.actionManager.forceTimeSync(); // Ensure the clock isn't stuck in the past
+        response = this.synchronizer.getMeasurmentResponse(anchor, nextExecutionTime, this.actionManager.getScanTime());
 
-			response = this.synchronizer.getMeasurmentResponse(anchor, this.actionManager
-			        .getMeasurmentTime(this.synchronizer.listOfAnchors.size(), this.synchronizer.listOfTags.size()),
-			        this.actionManager.getScanTime());
+        long now = System.currentTimeMillis();
+        // PATIENCE: Wait 10s before considering a round "dead"
+        boolean isStale = tagList.stream().anyMatch(tag -> tag.getMeasurements().stream()
+            .anyMatch(m -> now > m.getMeasurmentEndTime() + 10000)); 
 
-			long now = System.currentTimeMillis();
+        if (tagList.stream().anyMatch(t -> t.getMeasurements().isEmpty()) || isStale) {
+            if (isStale) startOutputProcess(tagList);
+            // ALIGNMENT: Create memory bucket at nextExecutionTime, NOT 'now'
+            this.synchronizer.addMeasurementRound(nextExecutionTime, this.actionManager.getChannelBusyUntil());
+        }
+    }
 
-			boolean isStale = tagList.stream()
-			    .filter(tag -> !tag.getMeasurements().isEmpty())
-			    .anyMatch(tag -> now > tag.getMeasurements().getLast().getMeasurmentEndTime() + 2000); 
-
-			boolean needsInitialStart = tagList.stream()
-			    .anyMatch(tag -> tag.getMeasurements().isEmpty());
-
-			if (needsInitialStart || isStale) {
-			    if (isStale) {
-			        logger.warning("ROUND TIMEOUT: Cleaning up stale measurements.");
-			        startOutputProcess(tagList);
-			    }
-			    
-			    // Start a fresh round with the new broad windows
-			    this.synchronizer.addMeasurementRound(now, this.actionManager.getChannelBusyUntil());
-			}
-		}
-
-		return (response != null) ? response : "{\"error\":\"Internal server error: Null response generated.\"}";
-	}
+    return (response != null) ? response : "{\"error\":\"Internal server error: Null response generated.\"}";
+}
 
 	/**
 	 * Utility method to send a standardized JSON error response to the client.
