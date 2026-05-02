@@ -1,18 +1,10 @@
 {
-    "Tags": [
-        {
-            "deviceId": "AC:15:18:A6:04:F8"
-        },
-        {
-            "deviceId": "AC:15:18:A6:00:84"
-        }
-    ],
-    "Anchors" : [
-        {
-            "deviceId": "AC:15:18:A6:00:54"
-        },
-        {
-            "deviceId": "C8:2E:18:FB:22:68"
-        }
-    ]
+  "Tags": [
+    {"deviceId": "tag0"}
+  ],
+  "Anchors": [
+    {"deviceId": "Anchor 1"},
+    {"deviceId": "Anchor 2"},
+    {"deviceId": "Anchor 3"}
+  ]
 }
