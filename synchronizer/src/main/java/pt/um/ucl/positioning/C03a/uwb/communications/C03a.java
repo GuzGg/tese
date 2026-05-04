@@ -1,12 +1,12 @@
 package pt.um.ucl.positioning.C03a.uwb.communications;
 
 import java.io.BufferedReader;
-import java.io.File; // ---> NEW <---
+import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintWriter;
-import java.nio.file.Paths; // ---> NEW <---
+import java.nio.file.Paths;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -69,6 +69,7 @@ public class C03a extends HttpServlet {
 	    super.init(servletConfig);
 	    this.startupTime = LocalDateTime.now();
 
+	    // 1. Load config.properties
 	    Properties props = new Properties();
 	    try (InputStream input = servletConfig.getServletContext().getResourceAsStream("/WEB-INF/config.properties")) {
 	        if (input == null) {
@@ -82,8 +83,27 @@ public class C03a extends HttpServlet {
 	        throw new ServletException("Error loading config.properties", ex);
 	    }
 
+	    // 2. Clear old execution logs on startup
+	    if (this.config.isEnableExecutionComparison()) {
+	        try {
+	            File logDir = new File(this.config.getLogDirectory());
+	            if (!logDir.exists()) logDir.mkdirs();
+	            
+	            File schedLog = new File(logDir, "server_scheduled.txt");
+	            File execLog = new File(logDir, "anchor_executed.txt");
+	            
+	            if (schedLog.exists()) schedLog.delete();
+	            if (execLog.exists()) execLog.delete();
+	            
+	            if (config.isEnableGeneralLogs()) logger.info("Execution logs cleared for fresh startup.");
+	        } catch (Exception e) {
+	            logger.warning("Could not clear previous execution logs: " + e.getMessage());
+	        }
+	    }
+
 	    if (config.isEnableGeneralLogs()) logger.info("Configuration loaded. Initializing Managers...");
 
+	    // 3. Initialize the Action Manager
 	    this.actionManager = new ActionManager(
 	        this.config.getAmSlowScanPeriod(), 
 	        this.config.getAmFastScanPeriod(),
@@ -93,6 +113,7 @@ public class C03a extends HttpServlet {
 	        this.config.getAmSafetyBuffer() 
 	    );
 
+	    // 4. Initialize Database Connection Pool
 	    HikariConfig hikariConfig = new HikariConfig();
 	    hikariConfig.setJdbcUrl(this.config.getDbUrl() + "/" + this.config.getDbName());
 	    hikariConfig.setUsername(this.config.getDbUsername());
@@ -112,6 +133,7 @@ public class C03a extends HttpServlet {
 	        throw new ServletException(e);
 	    }
 	    
+	    // 5. Load and Parse the Whitelist
 	    if(config.isWhitelistEnabled()) {
 	        try (InputStream is = servletConfig.getServletContext().getResourceAsStream("/WEB-INF/whitelist.json")) {
 	            if (is != null) {
@@ -285,12 +307,11 @@ public class C03a extends HttpServlet {
 		return this.getResponse(anchor);
 	}
 
-    // ---> UPDATED: Dynamic Pathing & Auto Folder Creation <---
 	private void logAnchorExecution(String anchorId, String tagId, long executedAt) {
 	    if (!config.isEnableExecutionComparison()) return;
 	    
 	    File logDir = new File(config.getLogDirectory());
-        if (!logDir.exists()) logDir.mkdirs(); // Safely create the folder if it doesn't exist
+        if (!logDir.exists()) logDir.mkdirs(); 
 	    
 	    String cleanTagNumber = tagId.replace("tag", "");
 	    String logMessage = "EXEC," + anchorId + "," + cleanTagNumber + "," + executedAt;
