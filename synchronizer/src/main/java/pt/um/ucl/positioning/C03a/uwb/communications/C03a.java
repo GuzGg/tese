@@ -1,9 +1,12 @@
 package pt.um.ucl.positioning.C03a.uwb.communications;
 
 import java.io.BufferedReader;
+import java.io.File; // ---> NEW <---
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintWriter;
+import java.nio.file.Paths; // ---> NEW <---
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -61,12 +64,11 @@ public class C03a extends HttpServlet {
 		super();
 	}
 
-@Override
+	@Override
 	public void init(ServletConfig servletConfig) throws ServletException {
 	    super.init(servletConfig);
 	    this.startupTime = LocalDateTime.now();
 
-	    // 1. Load config.properties
 	    Properties props = new Properties();
 	    try (InputStream input = servletConfig.getServletContext().getResourceAsStream("/WEB-INF/config.properties")) {
 	        if (input == null) {
@@ -82,7 +84,6 @@ public class C03a extends HttpServlet {
 
 	    if (config.isEnableGeneralLogs()) logger.info("Configuration loaded. Initializing Managers...");
 
-	    // 2. Initialize the Action Manager
 	    this.actionManager = new ActionManager(
 	        this.config.getAmSlowScanPeriod(), 
 	        this.config.getAmFastScanPeriod(),
@@ -92,7 +93,6 @@ public class C03a extends HttpServlet {
 	        this.config.getAmSafetyBuffer() 
 	    );
 
-	    // 3. Initialize Database Connection Pool
 	    HikariConfig hikariConfig = new HikariConfig();
 	    hikariConfig.setJdbcUrl(this.config.getDbUrl() + "/" + this.config.getDbName());
 	    hikariConfig.setUsername(this.config.getDbUsername());
@@ -112,17 +112,12 @@ public class C03a extends HttpServlet {
 	        throw new ServletException(e);
 	    }
 	    
-	    // 4. Load and Parse the Whitelist (Native org.json implementation)
 	    if(config.isWhitelistEnabled()) {
 	        try (InputStream is = servletConfig.getServletContext().getResourceAsStream("/WEB-INF/whitelist.json")) {
 	            if (is != null) {
-	                // A. Convert the entire file into a raw text string
 	                String jsonText = new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-	                
-	                // B. Parse the raw text into an org.json Root Object
 	                JSONObject rootNode = new JSONObject(jsonText);
 
-	                // C. Extract Tags
 	                if (rootNode.has("Tags")) {
 	                    JSONArray tagsNode = rootNode.getJSONArray("Tags");
 	                    for (int i = 0; i < tagsNode.length(); i++) {
@@ -131,7 +126,6 @@ public class C03a extends HttpServlet {
 	                    }
 	                }
 
-	                // D. Extract Anchors
 	                if (rootNode.has("Anchors")) {
 	                    JSONArray anchorsNode = rootNode.getJSONArray("Anchors");
 	                    for (int i = 0; i < anchorsNode.length(); i++) {
@@ -291,6 +285,25 @@ public class C03a extends HttpServlet {
 		return this.getResponse(anchor);
 	}
 
+    // ---> UPDATED: Dynamic Pathing & Auto Folder Creation <---
+	private void logAnchorExecution(String anchorId, String tagId, long executedAt) {
+	    if (!config.isEnableExecutionComparison()) return;
+	    
+	    File logDir = new File(config.getLogDirectory());
+        if (!logDir.exists()) logDir.mkdirs(); // Safely create the folder if it doesn't exist
+	    
+	    String cleanTagNumber = tagId.replace("tag", "");
+	    String logMessage = "EXEC," + anchorId + "," + cleanTagNumber + "," + executedAt;
+	    String fullPath = Paths.get(config.getLogDirectory(), "anchor_executed.txt").toString();
+	    
+	    try (FileWriter fw = new FileWriter(fullPath, true);
+	         PrintWriter pw = new PrintWriter(fw)) {
+	        pw.println(logMessage);
+	    } catch (IOException e) {
+	        System.err.println("Could not write to anchor_executed.txt: " + e.getMessage());
+	    }
+	}
+
 	private String handleMeasureRequest(JSONObject jsonObj) throws JSONException {
 	    String anchorID = jsonObj.getString("anchorID");
 	    
@@ -312,6 +325,9 @@ public class C03a extends HttpServlet {
             }
 	        
 	        long executedAt = obj.getLong("executedAt");
+	        
+	        logAnchorExecution(anchorID, tagID, executedAt);
+	        
 	        Tag tag = this.synchronizer.listOfTags.get(tagID);
 
 	        if (tag != null) {
@@ -439,8 +455,7 @@ public class C03a extends HttpServlet {
 	    } else if (action == Action.FAST_SCAN) {
 	        response = this.synchronizer.getFastScanResponse(this.actionManager.getFastScanTime());
 	    } else {
-	        // ---> NEW: Pure reactive queuing
-	        response = this.synchronizer.getMeasurmentResponse(anchor, this.actionManager.getScanTime(), this.config.getAmSafetyBuffer());
+	        response = this.synchronizer.getMeasurmentResponse(anchor, this.actionManager.getScanTime(), this.config.getAmSafetyBuffer(), this.config);
 	
 	        long now = System.currentTimeMillis();
 	        boolean isStale = tagList.stream().anyMatch(tag -> tag.getMeasurements().stream()

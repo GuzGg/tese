@@ -1,8 +1,10 @@
 package pt.um.ucl.positioning.C03a.uwb.managers;
 
+import java.io.File; // ---> NEW <---
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.nio.file.Paths; // ---> NEW <---
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -16,6 +18,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import pt.um.ucl.positioning.C03a.uwb.config.Config;
 import pt.um.ucl.positioning.C03a.uwb.devices.Anchor;
 import pt.um.ucl.positioning.C03a.uwb.devices.Tag;
 import pt.um.ucl.positioning.C03a.uwb.measurements.Measurement;
@@ -27,7 +30,6 @@ public class Synchronizer {
 	public Set<String> whitelistOfTags;
 	public Set<String> whitelistOfAnchors;
 	
-    // ---> NEW: The Reactive Round Queue
     public static class RoundPlan {
         public final long executionTime;
         public final long completionTime;
@@ -120,25 +122,29 @@ public class Synchronizer {
 		return jsonObject.toString();
 	}
 
-    private void logServerExpectation(Anchor anchor, String tagId, long time) {
-        String cleanTagNumber = tagId.replace("tag", ""); 
-        String logMessage = "Server expected " + anchor.getDeviceName() + " to measure tag " + cleanTagNumber + " in " + time;
+    private void logServerExpectation(Anchor anchor, String tagId, long time, Config config) {
+        if (!config.isEnableExecutionComparison()) return;
         
-        try (FileWriter fw = new FileWriter("Server_Expected_Logs.txt", true);
+        File logDir = new File(config.getLogDirectory());
+        if (!logDir.exists()) logDir.mkdirs(); // Safely create the folder if it doesn't exist
+        
+        String cleanTagNumber = tagId.replace("tag", ""); 
+        String logMessage = "SCHED," + anchor.getDeviceName() + "," + cleanTagNumber + "," + time;
+        String fullPath = Paths.get(config.getLogDirectory(), "server_scheduled.txt").toString();
+        
+        try (FileWriter fw = new FileWriter(fullPath, true);
              PrintWriter pw = new PrintWriter(fw)) {
             pw.println(logMessage);
         } catch (IOException e) {
-            System.err.println("Could not write to server log file: " + e.getMessage());
+            System.err.println("Could not write to server_scheduled.txt: " + e.getMessage());
         }
     }
 	
-    public String getMeasurmentResponse(Anchor requestingAnchor, long scanTime, long safetyBuffer) {
+    public String getMeasurmentResponse(Anchor requestingAnchor, long scanTime, long safetyBuffer, Config config) {
         long now = System.currentTimeMillis();
 
-        // 1. Clean up stale rounds from the queue (garbage collection)
         upcomingRounds.removeIf(round -> round.completionTime < now - 10000);
 
-        // 2. Find the earliest planned round where this anchor is included BUT hasn't received the schedule yet
         RoundPlan targetRound = null;
         for (RoundPlan round : upcomingRounds) {
             if (round.anchors.contains(requestingAnchor) && !round.dispatchedAnchors.contains(requestingAnchor.getDeviceName())) {
@@ -147,7 +153,6 @@ public class Synchronizer {
             }
         }
 
-        // 3. If no round fits, we must queue a NEW round appended to the end of the timeline
         if (targetRound == null) {
             long activeThreshold = now - 10000;
             List<Anchor> activeAnchors = this.listOfAnchors.values().stream()
@@ -155,7 +160,6 @@ public class Synchronizer {
                 .collect(Collectors.toList());
             List<Tag> activeTags = new ArrayList<>(this.listOfTags.values());
 
-            // Force the requesting anchor into the list if it's brand new
             if (!activeAnchors.contains(requestingAnchor)) {
                 activeAnchors.add(requestingAnchor);
             }
@@ -164,11 +168,11 @@ public class Synchronizer {
             long slotTime = scanTime + (2 * safetyBuffer);
             long cycleDuration = aCount * activeTags.size() * slotTime;
 
-            long nextStartTime = now + 1000; // Default: start in 1 second
+            long nextStartTime = now + 1000; 
             
             RoundPlan lastRound = null;
             for (RoundPlan round : upcomingRounds) {
-                lastRound = round; // iterates to the very last element
+                lastRound = round; 
             }
             
             if (lastRound != null && lastRound.completionTime > now) {
@@ -199,9 +203,9 @@ public class Synchronizer {
                 long slotStart = targetRound.executionTime + ((long) i * anchorCount * slotTime) + ((long) anchorIndex * slotTime);
                 long timeToMeasure = slotStart + safetyBuffer;
 
-                if (timeToMeasure < now - 500) continue; // Skip tasks in the past
+                if (timeToMeasure < now - 500) continue; 
 
-                logServerExpectation(requestingAnchor, tag.getDeviceName(), timeToMeasure);
+                logServerExpectation(requestingAnchor, tag.getDeviceName(), timeToMeasure, config);
 
                 JSONObject tagJson = new JSONObject();
                 tagJson.put("deviceID", tag.getDeviceName());
