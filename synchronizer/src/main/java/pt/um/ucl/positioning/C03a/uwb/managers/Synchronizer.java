@@ -1,10 +1,10 @@
 package pt.um.ucl.positioning.C03a.uwb.managers;
 
-import java.io.File; // ---> NEW <---
+import java.io.File; 
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.nio.file.Paths; // ---> NEW <---
+import java.nio.file.Paths; 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -12,6 +12,7 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 import org.json.JSONArray;
@@ -30,7 +31,10 @@ public class Synchronizer {
 	public Set<String> whitelistOfTags;
 	public Set<String> whitelistOfAnchors;
 	
+    private static final AtomicLong nextRoundIdCounter = new AtomicLong(1);
+	
     public static class RoundPlan {
+        public final long roundId; 
         public final long executionTime;
         public final long completionTime;
         public final List<Anchor> anchors;
@@ -38,6 +42,7 @@ public class Synchronizer {
         public final Set<String> dispatchedAnchors = ConcurrentHashMap.newKeySet();
 
         public RoundPlan(long executionTime, long completionTime, List<Anchor> anchors, List<Tag> tags) {
+            this.roundId = nextRoundIdCounter.getAndIncrement();
             this.executionTime = executionTime;
             this.completionTime = completionTime;
             this.anchors = anchors;
@@ -84,7 +89,7 @@ public class Synchronizer {
 	    return new ArrayList<>(this.listOfAnchors.values());
 	}
 
-	public synchronized void addMeasurementRound(long startTime, long endTime) {
+	public synchronized void addMeasurementRound(long startTime, long endTime, long roundId) {
 	    long bufferMillis = 5000; 
 	    for (Tag tag : listOfTags.values()) {
 	        if (tag == null) continue;
@@ -93,8 +98,7 @@ public class Synchronizer {
 	        while (measurements.size() > 10) {
 	            measurements.remove(0); 
 	        }
-	        
-	        measurements.add(new Measurement(tag, startTime - bufferMillis, endTime + bufferMillis));
+	        measurements.add(new Measurement(tag, startTime - bufferMillis, endTime + bufferMillis, roundId));
 	    }
 	}
 	
@@ -103,6 +107,7 @@ public class Synchronizer {
 		try {
 			jsonObject.put("actionToExecute", "slowScan");
 			jsonObject.put("whenToExecute", executionTime);
+			jsonObject.put("serverTimeNow", System.currentTimeMillis());
 		} catch (JSONException e) {
 			e.printStackTrace();
 			return "{\"error\":\"Failed to create slowScan response JSON.\"}";
@@ -115,6 +120,7 @@ public class Synchronizer {
 		try {
 			jsonObject.put("actionToExecute", "fastScan");
 			jsonObject.put("whenToExecute", executionTime);
+			jsonObject.put("serverTimeNow", System.currentTimeMillis());
 		} catch (JSONException e) {
 			e.printStackTrace();
 			return "{\"error\":\"Failed to create fastScan response JSON.\"}";
@@ -122,14 +128,14 @@ public class Synchronizer {
 		return jsonObject.toString();
 	}
 
-    private void logServerExpectation(Anchor anchor, String tagId, long time, Config config) {
+    private void logServerExpectation(Anchor anchor, String tagId, long time, long roundId, Config config) {
         if (!config.isEnableExecutionComparison()) return;
         
         File logDir = new File(config.getLogDirectory());
-        if (!logDir.exists()) logDir.mkdirs(); // Safely create the folder if it doesn't exist
+        if (!logDir.exists()) logDir.mkdirs(); 
         
         String cleanTagNumber = tagId.replace("tag", ""); 
-        String logMessage = "SCHED," + anchor.getDeviceName() + "," + cleanTagNumber + "," + time;
+        String logMessage = "SCHED," + roundId + "," + anchor.getDeviceName() + "," + cleanTagNumber + "," + time;
         String fullPath = Paths.get(config.getLogDirectory(), "server_scheduled.txt").toString();
         
         try (FileWriter fw = new FileWriter(fullPath, true);
@@ -143,24 +149,29 @@ public class Synchronizer {
     public String getMeasurmentResponse(Anchor requestingAnchor, long scanTime, long safetyBuffer, Config config) {
         long now = System.currentTimeMillis();
 
-        upcomingRounds.removeIf(round -> round.completionTime < now - 10000);
+        // FIX 1: Relaxed purge threshold. Only delete rounds that are practically in the past.
+        upcomingRounds.removeIf(round -> round.executionTime < now + 50);
 
         RoundPlan targetRound = null;
         for (RoundPlan round : upcomingRounds) {
-            if (round.anchors.contains(requestingAnchor) && !round.dispatchedAnchors.contains(requestingAnchor.getDeviceName())) {
+            boolean isInRound = round.anchors.stream().anyMatch(a -> a.getDeviceName().equals(requestingAnchor.getDeviceName()));
+            if (isInRound && !round.dispatchedAnchors.contains(requestingAnchor.getDeviceName())) {
                 targetRound = round;
                 break;
             }
         }
 
         if (targetRound == null) {
-            long activeThreshold = now - 10000;
+            // FIX 2: Increased active threshold to 30 seconds! 
+            // Lagging anchors won't lose their TDMA slot due to temporary Wi-Fi spikes.
+            long activeThreshold = now - 30000; 
             List<Anchor> activeAnchors = this.listOfAnchors.values().stream()
                 .filter(a -> a.getLastSeen() > activeThreshold)
                 .collect(Collectors.toList());
             List<Tag> activeTags = new ArrayList<>(this.listOfTags.values());
 
-            if (!activeAnchors.contains(requestingAnchor)) {
+            boolean alreadyActive = activeAnchors.stream().anyMatch(a -> a.getDeviceName().equals(requestingAnchor.getDeviceName()));
+            if (!alreadyActive) {
                 activeAnchors.add(requestingAnchor);
             }
 
@@ -168,7 +179,8 @@ public class Synchronizer {
             long slotTime = scanTime + (2 * safetyBuffer);
             long cycleDuration = aCount * activeTags.size() * slotTime;
 
-            long nextStartTime = now + 1000; 
+            long safeMinRoundTime = config.getAmMinRoundTime();
+            long nextStartTime = now + safeMinRoundTime; 
             
             RoundPlan lastRound = null;
             for (RoundPlan round : upcomingRounds) {
@@ -176,13 +188,13 @@ public class Synchronizer {
             }
             
             if (lastRound != null && lastRound.completionTime > now) {
-                nextStartTime = lastRound.completionTime + 100; 
+                nextStartTime = Math.max(nextStartTime, lastRound.completionTime + 100); 
             }
 
             targetRound = new RoundPlan(nextStartTime, nextStartTime + cycleDuration, activeAnchors, activeTags);
             upcomingRounds.add(targetRound);
             
-            this.addMeasurementRound(nextStartTime, nextStartTime + cycleDuration);
+            this.addMeasurementRound(nextStartTime, nextStartTime + cycleDuration, targetRound.roundId);
         }
 
         targetRound.dispatchedAnchors.add(requestingAnchor.getDeviceName());
@@ -190,9 +202,18 @@ public class Synchronizer {
         JSONObject jsonObject = new JSONObject();
         try {
             jsonObject.put("actionToExecute", "measure");
+            jsonObject.put("serverTimeNow", System.currentTimeMillis());
+            jsonObject.put("roundId", targetRound.roundId); 
             JSONArray tagsArray = new JSONArray();
 
-            int anchorIndex = targetRound.anchors.indexOf(requestingAnchor);
+            int anchorIndex = -1;
+            for (int j = 0; j < targetRound.anchors.size(); j++) {
+                if (targetRound.anchors.get(j).getDeviceName().equals(requestingAnchor.getDeviceName())) {
+                    anchorIndex = j;
+                    break;
+                }
+            }
+            
             int anchorCount = targetRound.anchors.size();
             long slotTime = scanTime + (2 * safetyBuffer);
 
@@ -205,7 +226,7 @@ public class Synchronizer {
 
                 if (timeToMeasure < now - 500) continue; 
 
-                logServerExpectation(requestingAnchor, tag.getDeviceName(), timeToMeasure, config);
+                logServerExpectation(requestingAnchor, tag.getDeviceName(), timeToMeasure, targetRound.roundId, config);
 
                 JSONObject tagJson = new JSONObject();
                 tagJson.put("deviceID", tag.getDeviceName());

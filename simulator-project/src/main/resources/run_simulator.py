@@ -10,7 +10,7 @@ import matplotlib.patches as mpatches
 # CONFIGURATION
 # =============================================================================
 ANCHOR_NAMES   = ["Anchor 1", "Anchor 2", "Anchor 3", "Anchor 4"]
-INITIAL_TAGS   = 1   
+INITIAL_TAGS   = 2
 SERVER_URL     = "http://localhost:8080/C03a/"
 
 SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
@@ -25,40 +25,49 @@ BASE_CMD     = [JAVA_EXE, "-cp", "bin;lib/*", "pt.um.ucl.positioning.C03a.uwb.si
 # =============================================================================
 def generate_visualization(log_folder_path):
     # --- Parse Logs ---
-    pattern = re.compile(r"Anchor\s+(\d+).*?tag\s+(\d+)\s+in\s+(\d+)")
     anchor_data: dict[int, list[dict]] = {}
 
-    log_files = glob.glob(os.path.join(log_folder_path, "*.txt"))
+    log_files = glob.glob(os.path.join(log_folder_path, "*_logs.txt"))
     if not log_files:
-        print(f"[viz] No .txt log files found in: {log_folder_path}")
+        print(f"[viz] No *_logs.txt log files found in: {log_folder_path}")
         return
 
+    # Parsing the CSV-style EXPECTED log lines
     for file_path in log_files:
         with open(file_path, "r") as f:
             for line in f:
-                m = pattern.search(line)
-                if m:
-                    a_id = int(m.group(1))
-                    t_id = int(m.group(2))
-                    ts   = int(m.group(3))
-                    anchor_data.setdefault(a_id, []).append({"ts": ts, "tag": t_id})
+                parts = line.strip().split(',')
+                # Format: EXPECTED,{roundId},{anchorName},{tagId},Wait:{wait}ms,Target:{targetTimestamp}
+                if len(parts) >= 6 and parts[0] == 'EXPECTED':
+                    try:
+                        a_id_str = parts[2].replace("Anchor", "").strip()
+                        a_id = int(a_id_str)
+                        t_id = int(parts[3])
+                        ts   = int(parts[5].replace("Target:", "").strip())
+                        
+                        anchor_data.setdefault(a_id, []).append({"ts": ts, "tag": t_id})
+                    except ValueError as e:
+                        print(f"[viz] Skipped malformed line: {line.strip()} -> {e}")
+                        continue
 
     if not anchor_data:
-        print("[viz] Log files found but no matching lines — check the log format.")
+        print("[viz] Log files found but no valid 'EXPECTED' lines — check the log format.")
         return
 
     for events in anchor_data.values():
         events.sort(key=lambda e: e["ts"])
 
     # --- Dynamically Load Java Config ---
-    scan_time = 200     # Default fallback
-    safety_buffer = 50  # Default fallback
+    # ---> HIGH-SPEED DEFAULTS <---
+    scan_time = 10     
+    safety_buffer = 10  
 
     # Hunt for the config file in standard Eclipse web project locations
     possible_paths = [
         os.path.join(PROJECT_ROOT, "WEB-INF", "config.properties"),
         os.path.join(PROJECT_ROOT, "WebContent", "WEB-INF", "config.properties"),
-        os.path.join(PROJECT_ROOT, "src", "main", "webapp", "WEB-INF", "config.properties")
+        os.path.join(PROJECT_ROOT, "src", "main", "webapp", "WEB-INF", "config.properties"),
+        os.path.abspath(os.path.join(SCRIPT_DIR, "..", "synchronizer", "src", "main", "webapp", "WEB-INF", "config.properties"))
     ]
 
     config_found = False
@@ -76,7 +85,7 @@ def generate_visualization(log_folder_path):
                 config_found = True
                 break
             except Exception as e:
-                print(f"[viz] Error reading {path}: {e}")
+                pass
 
     if not config_found:
         print(f"[viz] Could not find config.properties. Using defaults: scanTime={scan_time}ms, safetyBuffer={safety_buffer}ms")

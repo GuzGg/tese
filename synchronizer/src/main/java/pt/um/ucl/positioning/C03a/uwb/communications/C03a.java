@@ -69,7 +69,6 @@ public class C03a extends HttpServlet {
 	    super.init(servletConfig);
 	    this.startupTime = LocalDateTime.now();
 
-	    // 1. Load config.properties
 	    Properties props = new Properties();
 	    try (InputStream input = servletConfig.getServletContext().getResourceAsStream("/WEB-INF/config.properties")) {
 	        if (input == null) {
@@ -83,7 +82,6 @@ public class C03a extends HttpServlet {
 	        throw new ServletException("Error loading config.properties", ex);
 	    }
 
-	    // 2. Clear old execution logs on startup
 	    if (this.config.isEnableExecutionComparison()) {
 	        try {
 	            File logDir = new File(this.config.getLogDirectory());
@@ -91,9 +89,11 @@ public class C03a extends HttpServlet {
 	            
 	            File schedLog = new File(logDir, "server_scheduled.txt");
 	            File execLog = new File(logDir, "anchor_executed.txt");
+	            File durLog = new File(logDir, "round_durations.txt");
 	            
 	            if (schedLog.exists()) schedLog.delete();
 	            if (execLog.exists()) execLog.delete();
+	            if (durLog.exists()) durLog.delete();
 	            
 	            if (config.isEnableGeneralLogs()) logger.info("Execution logs cleared for fresh startup.");
 	        } catch (Exception e) {
@@ -103,7 +103,6 @@ public class C03a extends HttpServlet {
 
 	    if (config.isEnableGeneralLogs()) logger.info("Configuration loaded. Initializing Managers...");
 
-	    // 3. Initialize the Action Manager
 	    this.actionManager = new ActionManager(
 	        this.config.getAmSlowScanPeriod(), 
 	        this.config.getAmFastScanPeriod(),
@@ -113,7 +112,6 @@ public class C03a extends HttpServlet {
 	        this.config.getAmSafetyBuffer() 
 	    );
 
-	    // 4. Initialize Database Connection Pool
 	    HikariConfig hikariConfig = new HikariConfig();
 	    hikariConfig.setJdbcUrl(this.config.getDbUrl() + "/" + this.config.getDbName());
 	    hikariConfig.setUsername(this.config.getDbUsername());
@@ -133,7 +131,6 @@ public class C03a extends HttpServlet {
 	        throw new ServletException(e);
 	    }
 	    
-	    // 5. Load and Parse the Whitelist
 	    if(config.isWhitelistEnabled()) {
 	        try (InputStream is = servletConfig.getServletContext().getResourceAsStream("/WEB-INF/whitelist.json")) {
 	            if (is != null) {
@@ -155,10 +152,9 @@ public class C03a extends HttpServlet {
 	                        this.synchronizer.whitelistOfAnchors.add(anchorObj.getString("deviceId"));
 	                    }
 	                }
-	                
 	                if (config.isEnableGeneralLogs()) logger.info("Whitelist loaded successfully.");
 	            } else {
-	                if (config.isEnableGeneralLogs()) logger.warning("whitelist.json not found in /WEB-INF/! Security lists remain empty.");
+	                if (config.isEnableGeneralLogs()) logger.warning("whitelist.json not found in /WEB-INF/!");
 	            }
 	        } catch (Exception e) {
                  if (config.isEnableGeneralLogs()) logger.severe("Error reading whitelist.json: " + e.getMessage());
@@ -307,29 +303,34 @@ public class C03a extends HttpServlet {
 		return this.getResponse(anchor);
 	}
 
-	private void logAnchorExecution(String anchorId, String tagId, long executedAt) {
+	private void logAnchorExecution(long roundId, String anchorId, String tagId, long executedAt) {
 	    if (!config.isEnableExecutionComparison()) return;
-	    
 	    File logDir = new File(config.getLogDirectory());
         if (!logDir.exists()) logDir.mkdirs(); 
-	    
 	    String cleanTagNumber = tagId.replace("tag", "");
-	    String logMessage = "EXEC," + anchorId + "," + cleanTagNumber + "," + executedAt;
-	    String fullPath = Paths.get(config.getLogDirectory(), "anchor_executed.txt").toString();
-	    
-	    try (FileWriter fw = new FileWriter(fullPath, true);
+	    String logMessage = "EXEC," + roundId + "," + anchorId + "," + cleanTagNumber + "," + executedAt;
+	    try (FileWriter fw = new FileWriter(Paths.get(config.getLogDirectory(), "anchor_executed.txt").toString(), true);
 	         PrintWriter pw = new PrintWriter(fw)) {
 	        pw.println(logMessage);
-	    } catch (IOException e) {
-	        System.err.println("Could not write to anchor_executed.txt: " + e.getMessage());
-	    }
+	    } catch (IOException e) {}
 	}
 
 	private String handleMeasureRequest(JSONObject jsonObj) throws JSONException {
 	    String anchorID = jsonObj.getString("anchorID");
+	    long roundId = jsonObj.optLong("roundId", -1); 
 	    
 	    if (config.isWhitelistEnabled() && !this.synchronizer.whitelistOfAnchors.contains(anchorID)) {
              return "{\"error\":\"Unauthorized anchor ID.\"}";
+        }
+
+        if (jsonObj.has("actualDurationMs") && config.isEnableExecutionComparison()) {
+            long actualDuration = jsonObj.getLong("actualDurationMs");
+            File logDir = new File(config.getLogDirectory());
+            if (!logDir.exists()) logDir.mkdirs(); 
+            String fullPath = Paths.get(config.getLogDirectory(), "round_durations.txt").toString();
+            try (FileWriter fw = new FileWriter(fullPath, true); PrintWriter pw = new PrintWriter(fw)) {
+                pw.println("DURATION," + anchorID + "," + actualDuration);
+            } catch (IOException e) {}
         }
 	    
 	    Anchor anchor = this.synchronizer.listOfAnchors.get(anchorID);
@@ -346,8 +347,7 @@ public class C03a extends HttpServlet {
             }
 	        
 	        long executedAt = obj.getLong("executedAt");
-	        
-	        logAnchorExecution(anchorID, tagID, executedAt);
+	        logAnchorExecution(roundId, anchorID, tagID, executedAt);
 	        
 	        Tag tag = this.synchronizer.listOfTags.get(tagID);
 
@@ -357,7 +357,7 @@ public class C03a extends HttpServlet {
 	            Measurement targetRound = tag.getMeasurements().stream()
 	                .filter(m -> !m.getSentForOutput())
 	                .filter(m -> !m.getAnchors().contains(anchor)) 
-	                .filter(m -> m.checkIfValid(executedAt))
+	                .filter(m -> m.checkIfValid(executedAt) && m.getCustomMeasurementRoundId() == roundId) // Match by numeric ID
 	                .findFirst()
 	                .orElse(null);
 
